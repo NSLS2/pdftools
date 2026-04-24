@@ -117,6 +117,9 @@ class XSPROIRows(StrictEnum):
     ONE_TWENTY_EIGHT = "128"
     TWO_FIFTY_SIX = "256"
 
+class XSPImageMode(StrictEnum):
+    SINGLE = "Single"
+    MULTIPLE = "Multiple"
 
 class XSPModule(EpicsDevice):
     board_temp: A[SignalR[float], PvSuffix("BoardTemp_RBV")]
@@ -164,6 +167,7 @@ class XSPIO(StandardReadable, ADBaseIO):
     def __init__(self, prefix: str, name: str = "") -> None:
         with self.add_children_as_readables(Format.CONFIG_SIGNAL):
             self.bit_depth = epics_signal_rw_rbv(XSPBitDepth, prefix + "BitDepth")
+            self.image_mode = epics_signal_rw_rbv(XSPImageMode, prefix + "ImageMode")
             self.trigger_mode = epics_signal_rw_rbv(XSPTriggerMode, prefix + "TriggerMode")
             self.api_version = epics_signal_r(str, prefix + "APIVersion_RBV")
             self.xspd_version = epics_signal_r(str, prefix + "XSPDVersion_RBV")
