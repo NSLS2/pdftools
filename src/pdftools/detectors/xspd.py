@@ -15,6 +15,7 @@ from ophyd_async.core import (
 from ophyd_async.epics.adcore import (
     ADArmLogic,
     ADBaseIO,
+    ADImageMode,
     ADWriterType,
     AreaDetector,
     NDPluginBaseIO,
@@ -162,7 +163,6 @@ class XSPIO(StandardReadable, ADBaseIO):
     def __init__(self, prefix: str, name: str = "") -> None:
         with self.add_children_as_readables(Format.CONFIG_SIGNAL):
             self.bit_depth = epics_signal_rw_rbv(XSPBitDepth, prefix + "BitDepth")
-            self.image_mode = epics_signal_rw_rbv(XSPImageMode, prefix + "ImageMode")
             self.trigger_mode = epics_signal_rw_rbv(XSPTriggerMode, prefix + "TriggerMode")
             self.api_version = epics_signal_r(str, prefix + "APIVersion_RBV")
             self.xspd_version = epics_signal_r(str, prefix + "XSPDVersion_RBV")
@@ -206,7 +206,7 @@ class XSPTriggerLogic(DetectorTriggerLogic):
         }
 
     async def prepare_internal(self, num: int, livetime: float, deadtime: float):
-        image_mode = XSPImageMode.MULTIPLE if num != 1 else XSPImageMode.SINGLE
+        image_mode = ADImageMode.MULTIPLE if num != 1 else ADImageMode.SINGLE
         coros = [
             self.driver.image_mode.set(image_mode),
             self.driver.num_images.set(num),
@@ -218,7 +218,7 @@ class XSPTriggerLogic(DetectorTriggerLogic):
         await asyncio.gather(*coros)
 
     async def default_trigger_info(self):
-        return trigger_info_from_num_images(self.driver)
+        return await trigger_info_from_num_images(self.driver)
 
 
 class XSPDetector(AreaDetector[XSPIO]):
