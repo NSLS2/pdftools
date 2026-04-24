@@ -167,7 +167,7 @@ class XSPIO(StandardReadable, ADBaseIO):
             self.api_version = epics_signal_r(str, prefix + "APIVersion_RBV")
             self.xspd_version = epics_signal_r(str, prefix + "XSPDVersion_RBV")
             self.num_modules = epics_signal_r(int, prefix + "NumModules_RBV")
-            self.beam_energy = epics_signal_rw_rbv(int, prefix + "BeamEnergy")
+            self.beam_energy = epics_signal_rw_rbv(float, prefix + "BeamEnergy")
             self.saturation_flag = epics_signal_rw_rbv(
                 EnabledDisabled, prefix + "SaturationFlag"
             )
