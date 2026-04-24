@@ -14,7 +14,7 @@ classifiers = [
 description = "Importable tools for the PDF beamline at NSLS-II"
 dependencies = [
     "bluesky",
-    "ophyd-async",
+    "ophyd-async==0.17.0a3",
     "tiled[client]"
 ]
 dynamic = ["version"]
@@ -22,19 +22,30 @@ license.file = "LICENSE"
 readme = "README.md"
 requires-python = ">=3.11"
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
-    "tiled",
-    "copier",
-    "pipdeptree",
+    "ophyd-async[ca, pva, sim]>=0.17a3",
+    "inflection",
+    "import-linter",
+    "numpydoc",
     "pre-commit",
     "pyright",
     "pytest",
+    "pytest-asyncio",
     "pytest-cov",
+    "pytest-faulthandler",
+    "pytest-forked",
+    "pytest-insubprocess",
+    "pytest-rerunfailures",
+    "pytest-timeout",
     "ruff",
-    "tox-direct",
+    "scanspec>=1.0a1",
     "types-mock",
-    "import-linter",
+    "types-pyyaml",
+    "tiled[client,server]>=0.2.9",
+    "bluesky-tiled-plugins>=2.0.2",
+    "h5py>=3.16.0",
+    "ipython",
 ]
 
 [project.scripts]
@@ -119,30 +130,37 @@ exclude = [
 [tool.importlinter]
 root_package = "pdftools"
 
+
 [tool.pixi.workspace]
 channels = ["conda-forge"]
 platforms = ["linux-64"]
 
+[tool.pixi.dependencies]
+python = "*"
+
 [tool.pixi.pypi-dependencies]
 pdftools = { path = ".", editable = true }
 
+[tool.pixi.feature.py311.dependencies]
+python = "3.11.*"
+
+[tool.pixi.feature.py312.dependencies]
+python = "3.12.*"
+
+[tool.pixi.feature.py313.dependencies]
+python = "3.13.*"
+
+[tool.pixi.feature.py314.dependencies]
+python = "3.14.*"
+
 [tool.pixi.environments]
-default = { solve-group = "default" }
-dev = { features = ["dev"], solve-group = "default" }
+default = { features = ["dev"], solve-group = "default" }
+py311 = { features = ["dev", "py311"], solve-group = "py311" }
+py312 = { features = ["dev", "py312"], solve-group = "py312" }
+py313 = { features = ["dev", "py313"], solve-group = "py313" }
+py314 = { features = ["dev", "py314"], solve-group = "py314" }
 
 [tool.pixi.tasks]
-test = "pytest"
-test-w-cov = "pytest --cov --cov-report=html"
+test = "pytest --cov=src/pdftools --cov-report=term --cov-report=xml:coverage.xml"
 lint = "pre-commit run --all-files"
-
-[tool.pixi.dependencies]
-pytest = ">=9.0.1,<10"
-pre-commit = ">=4.4.0,<5"
-ruff = ">=0.14.6,<0.15"
-tox = ">=4.32.0,<5"
-pytest-cov = ">=7.0.0,<8"
-python = ">=3.13,<3.14"
-import-linter = ">=2.7,<3"
-tiled = ">=0.2.3,<0.3"
-ophyd-async = ">=0.15,<0.16"
-bluesky-base = ">=1.14.6,<2"
+type-check = "pyright src tests"
