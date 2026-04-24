@@ -3731,8 +3731,8 @@ packages:
   requires_python: '>=3.9'
 - pypi: ./
   name: pdftools
-  version: 0.1.dev2+g66f0eae36.d20260424
-  sha256: de841233356c8866e4fa829d26ce2010dfc3f56ee503167c727bf2fb31552413
+  version: 0.1.dev5+gac8f06be0.d20260424
+  sha256: efde41e83f225807563539db6dc4df38e2f27b3cf82c01674634eba1199c3019
   requires_dist:
   - bluesky
   - ophyd-async==0.17.0a3

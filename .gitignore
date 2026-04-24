@@ -7,3 +7,5 @@ _version.py
 !.pixi/config.toml
 .htmlcov/
 .vscode/
+.coverage
+coverage.xml

@@ -9,6 +9,7 @@ from ophyd_async.core import (
     SignalRW,
     StandardReadable,
     StrictEnum,
+    TriggerInfo,
 )
 from ophyd_async.core import (
     StandardReadableFormat as Format,
@@ -207,6 +208,10 @@ class XSPTriggerLogic(DetectorTriggerLogic):
 
     async def prepare_internal(self, num: int, livetime: float, deadtime: float):
         await prepare_exposures(self.driver, num, livetime, deadtime)
+
+    async def default_trigger_info(self):
+        num_images = await self.driver.num_images.get_value()
+        return TriggerInfo(collections_per_event=num_images)
 
 
 class XSPDetector(AreaDetector[XSPIO]):
