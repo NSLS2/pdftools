@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import Sequence
 from typing import Annotated as A
 
@@ -9,18 +10,16 @@ from ophyd_async.core import (
     SignalRW,
     StandardReadable,
     StrictEnum,
-    TriggerInfo,
-)
-from ophyd_async.core import (
     StandardReadableFormat as Format,
 )
 from ophyd_async.epics.adcore import (
     ADArmLogic,
     ADBaseIO,
+    ADImageMode,
     ADWriterType,
     AreaDetector,
     NDPluginBaseIO,
-    prepare_exposures,
+    trigger_info_from_num_images,
 )
 from ophyd_async.epics.core import (
     EpicsDevice,
@@ -163,30 +162,30 @@ class XSPModule(EpicsDevice):
 class XSPIO(StandardReadable, ADBaseIO):
     def __init__(self, prefix: str, name: str = "") -> None:
         with self.add_children_as_readables(Format.CONFIG_SIGNAL):
-            self.bit_depth = epics_signal_rw_rbv(XSPBitDepth, "BitDepth")
-            self.trigger_mode = epics_signal_rw_rbv(XSPTriggerMode, "TriggerMode")
-            self.api_version = epics_signal_r(str, "APIVersion_RBV")
-            self.xspd_version = epics_signal_r(str, "XSPDVersion_RBV")
-            self.num_modules = epics_signal_r(int, "NumModules_RBV")
-            self.beam_energy = epics_signal_rw_rbv(int, "BeamEnergy")
+            self.bit_depth = epics_signal_rw_rbv(XSPBitDepth, prefix + "BitDepth")
+            self.trigger_mode = epics_signal_rw_rbv(XSPTriggerMode, prefix + "TriggerMode")
+            self.api_version = epics_signal_r(str, prefix + "APIVersion_RBV")
+            self.xspd_version = epics_signal_r(str, prefix + "XSPDVersion_RBV")
+            self.num_modules = epics_signal_r(int, prefix + "NumModules_RBV")
+            self.beam_energy = epics_signal_rw_rbv(float, prefix + "BeamEnergy")
             self.saturation_flag = epics_signal_rw_rbv(
-                EnabledDisabled, "SaturationFlag"
+                EnabledDisabled, prefix + "SaturationFlag"
             )
-            self.charge_summing = epics_signal_rw_rbv(EnabledDisabled, "ChargeSumming")
+            self.charge_summing = epics_signal_rw_rbv(EnabledDisabled, prefix + "ChargeSumming")
             self.flatfield_correction = epics_signal_rw_rbv(
-                EnabledDisabled, "FlatFieldCorrection"
+                EnabledDisabled, prefix + "FlatFieldCorrection"
             )
-            self.gating_mode = epics_signal_rw_rbv(EnabledDisabled, "GatingMode")
-            self.counter_mode = epics_signal_rw_rbv(XSPCounterMode, "CounterMode")
-            self.roi_rows = epics_signal_rw_rbv(int, "ROIRows")
-            self.low_threshold = epics_signal_rw_rbv(int, "LowThreshold")
-            self.high_threshold = epics_signal_rw_rbv(int, "HighThreshold")
+            self.gating_mode = epics_signal_rw_rbv(EnabledDisabled, prefix + "GatingMode")
+            self.counter_mode = epics_signal_rw_rbv(XSPCounterMode, prefix + "CounterMode")
+            self.roi_rows = epics_signal_rw_rbv(XSPROIRows, prefix + "ROIRows")
+            self.low_threshold = epics_signal_rw_rbv(float, prefix + "LowThreshold")
+            self.high_threshold = epics_signal_rw_rbv(float, prefix + "HighThreshold")
             self.count_rate_correction = epics_signal_rw_rbv(
-                EnabledDisabled, "CountrateCorrection"
+                EnabledDisabled, prefix + "CountrateCorrection"
             )
-            self.compressor = epics_signal_r(XSPCompressor, "Compressor_RBV")
-            self.sensor_material = epics_signal_r(str, "SensorMaterial_RBV")
-            self.sensor_thickness = epics_signal_r(float, "SensorThickness_RBV")
+            self.compressor = epics_signal_r(XSPCompressor, prefix + "Compressor_RBV")
+            self.sensor_material = epics_signal_r(str, prefix + "SensorMaterial_RBV")
+            self.sensor_thickness = epics_signal_r(float, prefix + "SensorThickness_RBV")
 
         super().__init__(prefix, name=name)
 
@@ -207,11 +206,19 @@ class XSPTriggerLogic(DetectorTriggerLogic):
         }
 
     async def prepare_internal(self, num: int, livetime: float, deadtime: float):
-        await prepare_exposures(self.driver, num, livetime, deadtime)
+        image_mode = ADImageMode.MULTIPLE if num != 1 else ADImageMode.SINGLE
+        coros = [
+            self.driver.image_mode.set(image_mode),
+            self.driver.num_images.set(num),
+        ]
+        if livetime:
+            coros.append(self.driver.acquire_time.set(livetime))
+            if deadtime:
+                coros.append(self.driver.acquire_period.set(livetime + deadtime))
+        await asyncio.gather(*coros)
 
     async def default_trigger_info(self):
-        num_images = await self.driver.num_images.get_value()
-        return TriggerInfo(collections_per_event=num_images)
+        return await trigger_info_from_num_images(self.driver)
 
 
 class XSPDetector(AreaDetector[XSPIO]):
