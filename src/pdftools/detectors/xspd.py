@@ -10,6 +10,8 @@ from ophyd_async.core import (
     SignalRW,
     StandardReadable,
     StrictEnum,
+)
+from ophyd_async.core import (
     StandardReadableFormat as Format,
 )
 from ophyd_async.epics.adcore import (
@@ -163,7 +165,9 @@ class XSPIO(StandardReadable, ADBaseIO):
     def __init__(self, prefix: str, name: str = "") -> None:
         with self.add_children_as_readables(Format.CONFIG_SIGNAL):
             self.bit_depth = epics_signal_rw_rbv(XSPBitDepth, prefix + "BitDepth")
-            self.trigger_mode = epics_signal_rw_rbv(XSPTriggerMode, prefix + "TriggerMode")
+            self.trigger_mode = epics_signal_rw_rbv(
+                XSPTriggerMode, prefix + "TriggerMode"
+            )
             self.api_version = epics_signal_r(str, prefix + "APIVersion_RBV")
             self.xspd_version = epics_signal_r(str, prefix + "XSPDVersion_RBV")
             self.num_modules = epics_signal_r(int, prefix + "NumModules_RBV")
@@ -171,12 +175,18 @@ class XSPIO(StandardReadable, ADBaseIO):
             self.saturation_flag = epics_signal_rw_rbv(
                 EnabledDisabled, prefix + "SaturationFlag"
             )
-            self.charge_summing = epics_signal_rw_rbv(EnabledDisabled, prefix + "ChargeSumming")
+            self.charge_summing = epics_signal_rw_rbv(
+                EnabledDisabled, prefix + "ChargeSumming"
+            )
             self.flatfield_correction = epics_signal_rw_rbv(
                 EnabledDisabled, prefix + "FlatFieldCorrection"
             )
-            self.gating_mode = epics_signal_rw_rbv(EnabledDisabled, prefix + "GatingMode")
-            self.counter_mode = epics_signal_rw_rbv(XSPCounterMode, prefix + "CounterMode")
+            self.gating_mode = epics_signal_rw_rbv(
+                EnabledDisabled, prefix + "GatingMode"
+            )
+            self.counter_mode = epics_signal_rw_rbv(
+                XSPCounterMode, prefix + "CounterMode"
+            )
             self.roi_rows = epics_signal_rw_rbv(XSPROIRows, prefix + "ROIRows")
             self.low_threshold = epics_signal_rw_rbv(float, prefix + "LowThreshold")
             self.high_threshold = epics_signal_rw_rbv(float, prefix + "HighThreshold")
@@ -185,7 +195,9 @@ class XSPIO(StandardReadable, ADBaseIO):
             )
             self.compressor = epics_signal_r(XSPCompressor, prefix + "Compressor_RBV")
             self.sensor_material = epics_signal_r(str, prefix + "SensorMaterial_RBV")
-            self.sensor_thickness = epics_signal_r(float, prefix + "SensorThickness_RBV")
+            self.sensor_thickness = epics_signal_r(
+                float, prefix + "SensorThickness_RBV"
+            )
 
         super().__init__(prefix, name=name)
 
