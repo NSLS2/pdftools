@@ -21,7 +21,7 @@ from ophyd_async.epics.adcore import (
     ADWriterFactory,
     AreaDetector,
     NDPluginBaseIO,
-    trigger_info_from_num_images,
+    trigger_info_from_driver,
 )
 from ophyd_async.epics.core import (
     EpicsDevice,
@@ -238,7 +238,7 @@ class XSPTriggerLogic(DetectorTriggerLogic):
         await asyncio.gather(*coros)
 
     async def default_trigger_info(self):
-        return await trigger_info_from_num_images(self.driver)
+        return await trigger_info_from_driver(self.driver.num_images)
 
 
 class XSPDetector(AreaDetector[XSPIO]):

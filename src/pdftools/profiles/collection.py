@@ -2,6 +2,7 @@
 
 import argparse
 import os
+from pathlib import PureWindowsPath
 
 import numpy as np
 from bluesky import plan_stubs as bps
@@ -15,7 +16,7 @@ from bluesky_tiled_plugins import TiledWriter
 from IPython.core.getipython import get_ipython
 from IPython.terminal.interactiveshell import TerminalInteractiveShell
 from nslsii.ophyd_async.providers import NSLS2PathProvider
-from ophyd_async.epics.adcore import ADWriterFactory
+from ophyd_async.epics.adcore import ADWriterFactory, ContAcqDetector
 from ophyd_async.epics.adpilatus import PilatusDetector
 from tiled.client import from_uri, simple
 
@@ -46,6 +47,8 @@ MOCK = is_running_in_ci()
 # Beamline Redis for RunEngine metadata, as pdf-profile-collection's 00-base uses it
 # (port 6380 with SSL is open_redis_client's default when redis_ssl=True).
 os.environ.setdefault("REDIS_HOST", "xf28id1-pdf-redis1.nsls2.bnl.gov")
+# NSLS2PathProvider derives /nsls2/data/<acronym>/proposals from this.
+os.environ.setdefault("BEAMLINE_ACRONYM", "PDF")
 # Have ophyd-async keep detector state constant when not explicitly overridden.
 os.environ["OPHYD_ASYNC_PRESERVE_DETECTOR_STATE"] = "YES"
 
@@ -115,6 +118,11 @@ RE.waiting_hook = ProgressBarManager()  # type: ignore
 # Define our global default path provider for the beamline
 path_provider = NSLS2PathProvider(RE.md)
 
+# The Perkin Elmer IOCs run on Windows hosts and write to the proposals share as J:.
+pe_path_provider = NSLS2PathProvider(
+    RE.md, base_write_dir=PureWindowsPath("J:\\proposals")
+)
+
 # Devices are added here, step by step (detectors, motors, sample environment).
 with auto_init_devices(timeout=2.0):
     # Area detectors writing TIFF, as in pdf-profile-collection (81-pilatus, 84-lambda)
@@ -128,6 +136,19 @@ with auto_init_devices(timeout=2.0):
         "XF:28ID1-ES{Det:Pilatus}",
         ADWriterFactory.tiff(path_provider),
         name="pilatus-1",
+    )
+    # Free-running flat panels; Proc1 sums frames per point, as pe1c/pe2c do today.
+    pe1c = ContAcqDetector(
+        "XF:28ID1-ES{Det:PE1}",
+        ADWriterFactory.tiff(pe_path_provider),
+        name="pe1",
+        proc_suffix="Proc1:",
+    )
+    pe2c = ContAcqDetector(
+        "XF:28ID1-ES{Det:PE2}",
+        ADWriterFactory.tiff(pe_path_provider),
+        name="pe2",
+        proc_suffix="Proc1:",
     )
 
 # Add baseline=[<device1>, <device2>, ...] to SupplementalData as devices arrive.
