@@ -23,7 +23,7 @@ from tiled.client import from_uri, simple
 import pdftools
 from pdftools.detectors import XSPDetector
 from pdftools.motors import Mirror, OCMTable, OpticsTableADC, SideBounceMono, Slits
-from pdftools.shutter import FastShutter
+from pdftools.shutter import FastShutter, FilterBank
 from pdftools.utils import (
     CI_ENV_VAR,
     ProposalIDPrompt,
@@ -157,6 +157,8 @@ with auto_init_devices(timeout=2.0):
     )
     # Fast shutter, as in pdf-profile-collection 12-optics (inverted Cmd/Sts records)
     fs = FastShutter("XF:28ID1B-OP{PSh:1-Det:2}", name="fs")
+    # Filter bank: the old profile's fb_two_button_shutters (fb2), now just fb
+    fb = FilterBank("XF:28ID1B-OP{Fltr:", name="fb")
 
     # Optics, as in pdf-profile-collection 12-optics
     OCM_slits = Slits("XF:28ID1B-OP{Slt:2-Ax:", name="OCM_slits")

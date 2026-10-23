@@ -152,6 +152,7 @@ def test_profile_boots_in_mock_mode(tmp_path: Path):
         "pe1c",
         "pe2c",
         "fs",
+        "fb",
         "OCM_slits",
         "BDM_slits",
         "WB_slits",
