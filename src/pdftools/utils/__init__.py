@@ -3,9 +3,10 @@
 import os
 from collections.abc import MutableMapping
 from datetime import datetime
-from typing import Any
+from typing import Any, TypeVar
 
 from bluesky.run_engine import RunEngine
+from IPython.core.getipython import get_ipython
 from IPython.terminal.interactiveshell import TerminalInteractiveShell
 from IPython.terminal.prompts import Prompts
 from nslsii.utils import open_redis_client
@@ -24,6 +25,43 @@ from rich.console import Console
 from rich.markup import escape
 
 CI_ENV_VAR = "PDFTOOLS_RUNNING_IN_CI"
+
+NSVarT = TypeVar("NSVarT")
+
+
+def get_obj_from_ipython_ns(var_name: str, var_type: type[NSVarT]) -> NSVarT | None:
+    """Return ``var_name`` from the IPython namespace if it is a ``var_type``."""
+    ipython = get_ipython()
+    if ipython is not None:
+        obj = ipython.user_ns.get(var_name)
+        if isinstance(obj, var_type):
+            return obj
+    return None
+
+
+def ensure_available(var_type: type[NSVarT], **kwargs: NSVarT | None) -> NSVarT:
+    """Return the one object passed by keyword, or the session's object of that name.
+
+    As in hextools.utils: ``ensure_available(FastShutter, fs=shutter)`` returns
+    ``shutter`` if given, else the ``fs`` in the IPython namespace, else raises
+    ``ValueError``. A value of the wrong type raises ``TypeError``.
+    """
+    if len(kwargs) != 1:
+        raise ValueError("Can only check availability of a single object at a time.")
+    name, value = next(iter(kwargs.items()))
+    if isinstance(value, var_type):
+        return value
+    if value is not None:
+        raise TypeError(
+            f"Value for {name} must be of type {var_type} or None, is {type(value)}"
+        )
+    found = get_obj_from_ipython_ns(name, var_type)
+    if found is not None:
+        return found
+    raise ValueError(
+        f"Object {name} of type {var_type} is not available locally, "
+        "or in the IPython namespace!"
+    )
 
 
 def is_running_in_ci() -> bool:

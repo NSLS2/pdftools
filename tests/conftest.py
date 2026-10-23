@@ -17,7 +17,14 @@ from collections.abc import Generator
 import pytest
 from bluesky._vendor.super_state_machine.errors import TransitionError  # noqa: PLC2701
 from bluesky.run_engine import RunEngine
-from ophyd_async.core import StaticPathProvider, UUIDFilenameProvider, init_devices
+from ophyd_async.core import (
+    StaticPathProvider,
+    UUIDFilenameProvider,
+    callback_on_mock_put,
+    init_devices,
+    set_mock_value,
+)
+from ophyd_async.epics.adcore import ADImageMode, ADWriterFactory, ContAcqDetector
 from ophyd_async.sim import SimBlobDetector, SimPointDetector
 from pytest import FixtureRequest
 from tiled.client import from_uri
@@ -181,3 +188,41 @@ def sample_detectors_factory(RE: RunEngine):
         return sim_blob, sim_point
 
     return _factory
+
+
+@pytest.fixture
+def pe(RE: RunEngine, static_path_provider: StaticPathProvider) -> ContAcqDetector:
+    """A Perkin Elmer acquiring continuously at 0.1 s, as the profile builds it.
+
+    The mock passes frames as the IOC does: one CB trigger releases ``PostCount``
+    frames, Proc1 combines every ``NumFilter`` of them, and the TIFF writer
+    captures what is left. A mock adding one frame per trigger only fits one
+    image per event, and hid that until xrd_count asked for three.
+    """
+    with init_devices(mock=True):
+        pe = ContAcqDetector(
+            "PE1:",
+            ADWriterFactory.tiff(static_path_provider),
+            name="pe1",
+            proc_suffix="Proc1:",
+        )
+    set_mock_value(pe.driver.image_mode, ADImageMode.CONTINUOUS)
+    set_mock_value(pe.driver.acquire, True)
+    set_mock_value(pe.driver.acquire_time, 0.1)
+    set_mock_value(pe.driver.array_size_x, 4)
+    set_mock_value(pe.driver.array_size_y, 3)
+    tiff, cb, proc = pe.tiff, pe.cb, pe.proc  # pyright: ignore[reportAttributeAccessIssue]
+    set_mock_value(tiff.file_path_exists, True)
+
+    async def _buffer_frames(value):
+        if not value:
+            return
+        frames = await cb.post_count.get_value()
+        frames //= max(1, await proc.num_filter.get_value())
+        set_mock_value(tiff.num_captured, await tiff.num_captured.get_value() + frames)
+        asyncio.get_running_loop().call_later(0.01, set_mock_value, cb.trigger_, False)
+
+    callback_on_mock_put(cb.trigger_, _buffer_frames)
+    # each run opens a new file, which starts the count again
+    callback_on_mock_put(tiff.capture, lambda _: set_mock_value(tiff.num_captured, 0))
+    return pe

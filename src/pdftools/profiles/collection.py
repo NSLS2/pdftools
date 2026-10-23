@@ -34,6 +34,7 @@ from pdftools.utils import (
     print_version_info,
     remove_md_keys,
 )
+from pdftools.xrd import xrd_count, xrd_dark, xrd_scan  # noqa: F401  for the session
 
 # Mechanism for passing arguments to profile.
 _parser = argparse.ArgumentParser("Collection profile for pdftools.")
