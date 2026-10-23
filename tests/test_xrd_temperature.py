@@ -86,7 +86,7 @@ async def test_xrd_temperature_series_counts_at_each_settled_temperature(
     assert moves == [
         step
         for t in (100.0, 200.0, 300.0)
-        for step in (("eurotherm-loop1", t), ("fs", "Open"), ("fs", "Close"))
+        for step in (("fs", "Close"), ("eurotherm-loop1", t), ("fs", "Open"))
     ] + [("fs", "Close")]
     assert await fs.status.get_value() == OnOff.ON
     assert get_mock_put(loop.ramp_rate).call_count == 0
@@ -124,3 +124,44 @@ async def test_xrd_temperature_series_closes_the_shutter_if_never_settled(
         )
     assert "start" not in docs  # nothing counted off temperature
     assert await fs.status.get_value() == OnOff.ON
+
+
+async def test_xrd_temperature_series_closes_an_open_shutter_before_moving(
+    RE: RunEngine, pe: ContAcqDetector, fs: FastShutter, eurotherm: Eurotherm3k
+):
+    loop = eurotherm.loop1
+    set_mock_value(fs.status, OnOff.OFF)  # left open by an earlier plan
+    shutter_at_move: list[OnOff] = []
+
+    async def _reach(value, **_):
+        shutter_at_move.append(await fs.status.get_value())
+        set_mock_value(loop.readback, value)
+
+    callback_on_mock_put(loop.setpoint, _reach)
+    _run(RE, xrd_temperature_series([pe], loop, [100.0], 0.1, shutter=fs))
+    assert shutter_at_move == [OnOff.ON]
+
+
+async def test_xrd_temperature_series_reads_the_temperature_before_each_run(
+    RE: RunEngine, pe: ContAcqDetector, fs: FastShutter, eurotherm: Eurotherm3k
+):
+    loop = eurotherm.loop1
+    callback_on_mock_put(
+        loop.setpoint, lambda value, **_: set_mock_value(loop.readback, value)
+    )
+    drift = iter([100.4, 100.7])
+
+    def _drift(name, doc):
+        if name == "stop":  # the temperature wanders between runs
+            set_mock_value(loop.readback, next(drift, 100.9))
+
+    RE.subscribe(_drift)
+    docs, _ = _run(
+        RE,
+        xrd_temperature_series([pe], loop, [100.0], 0.1, num_iterations=3, shutter=fs),
+    )
+    assert [s["temperature"]["readback"] for s in docs["start"]] == [
+        100.0,
+        100.4,
+        100.7,
+    ]

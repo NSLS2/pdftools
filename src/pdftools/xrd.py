@@ -490,27 +490,30 @@ def xrd_temperature_series(
         if ramp_rate is not None:
             yield from bps.mv(controller.ramp_rate, ramp_rate)
         for setpoint in temperatures:
-            yield from bps.mv(controller, setpoint)
-            readback = yield from bps.rd(controller.readback)
-            run_md = _md("xrd_temperature_series", sample_name, description, md)
-            run_md["temperature"] = {
-                "controller": controller.name,
-                "setpoint": setpoint,
-                "readback": readback,
-            }
-            if use_shutter:
-                yield from bps.mv(shutter, "Open")
-            yield from _count_runs(
-                detectors,
-                exposure_time,
-                num_images,
-                images_to_average,
-                num_iterations,
-                time_gap,
-                run_md,
-            )
             if use_shutter:
                 yield from bps.mv(shutter, "Close")
+            yield from bps.mv(controller, setpoint)
+            if use_shutter:
+                yield from bps.mv(shutter, "Open")
+            for i in range(num_iterations):
+                if i > 0:
+                    yield from bps.sleep(time_gap)
+                readback = yield from bps.rd(controller.readback)
+                run_md = _md("xrd_temperature_series", sample_name, description, md)
+                run_md["temperature"] = {
+                    "controller": controller.name,
+                    "setpoint": setpoint,
+                    "readback": readback,
+                }
+                yield from _count_runs(
+                    detectors,
+                    exposure_time,
+                    num_images,
+                    images_to_average,
+                    1,
+                    0.0,
+                    run_md,
+                )
 
     def _cleanup():
         if use_shutter:
