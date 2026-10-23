@@ -22,6 +22,7 @@ from tiled.client import from_uri, simple
 
 import pdftools
 from pdftools.detectors import XSPDetector
+from pdftools.motors import Mirror, OCMTable, OpticsTableADC, SideBounceMono, Slits
 from pdftools.shutter import FastShutter
 from pdftools.utils import (
     CI_ENV_VAR,
@@ -156,6 +157,16 @@ with auto_init_devices(timeout=2.0):
     )
     # Fast shutter, as in pdf-profile-collection 12-optics (inverted Cmd/Sts records)
     fs = FastShutter("XF:28ID1B-OP{PSh:1-Det:2}", name="fs")
+
+    # Optics, as in pdf-profile-collection 12-optics
+    OCM_slits = Slits("XF:28ID1B-OP{Slt:2-Ax:", name="OCM_slits")
+    BDM_slits = Slits("XF:28ID1A-OP{Slt:1-Ax:", name="BDM_slits")
+    WB_slits = Slits("XF:28ID1A-OP{Slt:0-Ax:", name="WB_slits")
+    cleanup_slits = Slits("XF:28ID1B-OP{Slt:AS-Ax:", name="cleanup_slits")
+    sbm = SideBounceMono("XF:28ID1A-OP{Mono:SBM-Ax:", name="sbm")
+    Mirror_VFM = Mirror("XF:28ID1A-OP{Mir:VFM-Ax:", name="Mirror_VFM")
+    optics_table_adc = OpticsTableADC("XF:28ID1B-ES{Tbl:1-Ax:", name="optics_table_adc")
+    OCM_table = OCMTable("XF:28ID1B-ES{OCM-Ax:", name="OCM_table")
 
 # Add baseline=[<device1>, <device2>, ...] to SupplementalData as devices arrive.
 sd = bpp.SupplementalData()

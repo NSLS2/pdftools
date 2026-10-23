@@ -146,5 +146,19 @@ def test_profile_boots_in_mock_mode(tmp_path: Path):
     assert result.returncode == 0, result.stderr
     assert "Mock mode proposal" in result.stdout
     assert "Connecting to beamline devices" in result.stdout
-    for name in ("lambda1", "pilatus1", "pe1c", "pe2c", "fs"):
+    for name in (
+        "lambda1",
+        "pilatus1",
+        "pe1c",
+        "pe2c",
+        "fs",
+        "OCM_slits",
+        "BDM_slits",
+        "WB_slits",
+        "cleanup_slits",
+        "sbm",
+        "Mirror_VFM",
+        "optics_table_adc",
+        "OCM_table",
+    ):
         assert re.search(rf"{re.escape(name)} \.+ \[\s*OK\s*\]", result.stdout), name
