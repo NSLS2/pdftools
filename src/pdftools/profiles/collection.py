@@ -15,9 +15,12 @@ from bluesky_tiled_plugins import TiledWriter
 from IPython.core.getipython import get_ipython
 from IPython.terminal.interactiveshell import TerminalInteractiveShell
 from nslsii.ophyd_async.providers import NSLS2PathProvider
+from ophyd_async.epics.adcore import ADWriterFactory
+from ophyd_async.epics.adpilatus import PilatusDetector
 from tiled.client import from_uri, simple
 
 import pdftools
+from pdftools.detectors import XSPDetector
 from pdftools.utils import (
     CI_ENV_VAR,
     ProposalIDPrompt,
@@ -114,7 +117,18 @@ path_provider = NSLS2PathProvider(RE.md)
 
 # Devices are added here, step by step (detectors, motors, sample environment).
 with auto_init_devices(timeout=2.0):
-    pass
+    # Area detectors writing TIFF, as in pdf-profile-collection (81-pilatus, 84-lambda)
+    lambda1 = XSPDetector(
+        "XF:28ID1-ES{Lambda-Det:1}",
+        ADWriterFactory.tiff(path_provider),
+        name="lambda1",
+    )
+    # Assumed PILATUS3 (default readout_time); the model is not yet confirmed.
+    pilatus1 = PilatusDetector(
+        "XF:28ID1-ES{Det:Pilatus}",
+        ADWriterFactory.tiff(path_provider),
+        name="pilatus-1",
+    )
 
 # Add baseline=[<device1>, <device2>, ...] to SupplementalData as devices arrive.
 sd = bpp.SupplementalData()
