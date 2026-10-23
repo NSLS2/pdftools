@@ -30,6 +30,7 @@ dependencies = [
   "bluesky-tiled-plugins>=2.0.11",
   "ophyd-async[ca, pva, sim]>=0.21.3",
   "nslsii",
+  "rich",
 ]
 
 [dependency-groups]

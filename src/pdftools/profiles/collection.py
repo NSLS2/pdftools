@@ -1,32 +1,30 @@
-"""pdftools bluesky collection profile."""
+"""Bluesky profile for the 28-ID-1 PDF beamline at NSLS-II."""
 
 import argparse
 import os
-from datetime import datetime
 
-import numpy as np
-from bluesky import plan_stubs as bps
-from bluesky import plans as bp
 from bluesky import preprocessors as bpp
 from bluesky.callbacks.best_effort import BestEffortCallback
 from bluesky.magics import BlueskyMagics
 from bluesky.run_engine import RunEngine, autoawait_in_bluesky_event_loop
-from bluesky.utils import ProgressBarManager, ts_msg_hook
+from bluesky.utils import ProgressBarManager
 from bluesky_tiled_plugins import TiledWriter
 from IPython.core.getipython import get_ipython
 from IPython.terminal.interactiveshell import TerminalInteractiveShell
 from nslsii.ophyd_async.providers import NSLS2PathProvider
-from nslsii.utils import open_redis_client
-from ophyd_async.core import init_devices
-from redis_json_dict.redis_json_dict import RedisJSONDict
 from tiled.client import from_uri, simple
 
 import pdftools
-
-# Have ophyd-async keep detector state constant when not explicitly overridden
-os.environ["OPHYD_ASYNC_PRESERVE_DETECTOR_STATE"] = "YES"
-if "REDIS_HOST" not in os.environ:
-    os.environ["REDIS_HOST"] = "<BEAMLINE REDIS METADATA HOST>"
+from pdftools.utils import (
+    CI_ENV_VAR,
+    ProposalIDPrompt,
+    auto_init_devices,
+    initialize_run_engine,
+    is_running_in_ci,
+    print_proposal_info,
+    print_version_info,
+    remove_md_keys,
+)
 
 # Mechanism for passing arguments to profile.
 _parser = argparse.ArgumentParser("Collection profile for pdftools.")
@@ -35,53 +33,39 @@ _parser.add_argument(
     action="store_true",
     help="Run the profile in mock mode with simulated devices and metadata.",
 )
+if vars(_parser.parse_args())["mock"]:
+    os.environ[CI_ENV_VAR] = "YES"
+MOCK = is_running_in_ci()
 
-# Determine if we are running in CI/mock mode
-MOCK = vars(_parser.parse_args())["mock"]
+# Beamline Redis for RunEngine metadata, as pdf-profile-collection's 00-base uses it
+# (port 6380 with SSL is open_redis_client's default when redis_ssl=True).
+os.environ.setdefault("REDIS_HOST", "xf28id1-pdf-redis1.nsls2.bnl.gov")
+# Have ophyd-async keep detector state constant when not explicitly overridden.
+os.environ["OPHYD_ASYNC_PRESERVE_DETECTOR_STATE"] = "YES"
 
-# Construct a RunEngine with either an in-process metadata dict,
-# or a redis-backed metadata store.
+# Tiled catalog that pdf-profile-collection's 00-base writes to today.
+TILED_URI = "https://tiled.nsls2.bnl.gov"
+TILED_CATALOG = ("pdf", "migration")
+
+print_version_info()
+
+# Set up the RunEngine and its metadata.
+RE: RunEngine = initialize_run_engine()
 if not MOCK:
-    RE = RunEngine(RedisJSONDict(open_redis_client(redis_ssl=True), ""))  # type: ignore
-else:
-    RE = RunEngine(
-        {
-            "data_session": "pass-123456",
-            "cycle": (
-                f"{datetime.today().year}-{(datetime.today().month - 1) // 4 + 1}"
-            ),
-            "proposal": {
-                "title": "Mock proposal",
-                "type": "commissioning",
-                "pi_name": os.getenv("USER", "Unknown"),
-            },
-        }
-    )
-
-# Add tools package version alongside bluesky/ophyd/ophyd-async etc.
+    # Trim the PDF: entries 00-base removes from Redis on every start.
+    remove_md_keys(RE.md, prefix="PDF:")
 RE.md["versions"]["pdftools"] = pdftools.__version__
-
-# Beamline and facility metadata
 RE.md["facility"] = "NSLS-II"
-RE.md["beamline_id"] = ""  # Set the beamline ID (i.e. 27-ID-1)
+RE.md["group"] = "PDF"
+RE.md["beamline_id"] = "28-ID-1"
 
-# Attempt to extract TLA from environment variables.
-RE.md["group"] = TLA = (
-    os.environ.get("ENDSTATION_ACRONYM")
-    or os.environ.get("BEAMLINE_ACRONYM")
-    or "Unknown"
-).upper()
+# Display active proposal information in the console.
+print_proposal_info(RE.md)
 
 # Get the IPython shell and set up the custom prompt to show the current proposal ID.
 ipython = get_ipython()
 if ipython is not None and isinstance(ipython, TerminalInteractiveShell):
-    try:
-        from nslsii.utils import ProposalIDPrompt  # type: ignore
-    except ImportError:  # Only available in nslsii after 0.11.9
-        pass
-    else:
-        ipython.prompts = ProposalIDPrompt(RE, ipython)
-
+    ipython.prompts = ProposalIDPrompt(RE, ipython)
     BlueskyMagics.RE = RE
     ipython.register_magics(BlueskyMagics)
     autoawait_in_bluesky_event_loop()
@@ -94,48 +78,41 @@ if ipython is not None and isinstance(ipython, TerminalInteractiveShell):
     # Use %tb verbose to view full traceback.
     ipython.run_line_magic("xmode", "minimal")
 
-# Set up the Tiled clients for data acquisition and reading based on the environment.
+# Construct our tiled clients for writing and (in an interactive session) reading.
+# In CI/mock mode, an in-process server stands in for both.
 if not MOCK:
-    # Typically $TLA/raw. Replace with beamline-specific catalog.
-    daq_tiled_catalog = f"{TLA.lower()}/raw"
-
     tiled_writing_client = from_uri(
-        "https://tiled.nsls2.bnl.gov",
-        api_key=os.environ.get(f"TILED_BLUESKY_WRITING_API_KEY_{TLA}", ""),
-    )[daq_tiled_catalog]
+        TILED_URI,
+        api_key=os.environ.get("TILED_BLUESKY_WRITING_API_KEY_PDF", ""),
+    )[TILED_CATALOG[0]][TILED_CATALOG[1]]
+    tiled_writing_client.context.http_client.headers["tiled-qos"] = "acquisition"
     if ipython is not None and isinstance(ipython, TerminalInteractiveShell):
-        tiled_reading_client = c = from_uri("https://tiled.nsls2.bnl.gov")[
-            daq_tiled_catalog
+        tiled_reading_client = c = from_uri(TILED_URI)[TILED_CATALOG[0]][
+            TILED_CATALOG[1]
         ]
 else:
     tiled_writing_client = tiled_reading_client = c = simple()
 
-
-# Subscribe the tiled writer to the RunEngine
-RE.subscribe(TiledWriter(tiled_writing_client))
-
-# Set up our default path provider
-path_provider = NSLS2PathProvider(RE.md)
-
-# Initialize all async devices within this context manager
-with init_devices(mock=MOCK, timeout=2.0):
-    pass
+# Subscribe the tiled writer; documents it cannot send are kept on local disk.
+RE.subscribe(TiledWriter(tiled_writing_client, backup_directory="/tmp/bluesky-docs"))
 
 # Subscribe the best effort callback
 bec = BestEffortCallback()
 RE.subscribe(bec)
 
-# Disable bec printout of baseline readings
-# since it is kind of noisy
+# Disable bec printout of baseline readings since it is kind of noisy
 bec.disable_baseline()
 
-# Confiugre the default terminal progress bar manager
+# Configure the default terminal progress bar manager
 RE.waiting_hook = ProgressBarManager()  # type: ignore
 
-# Optionally enable ts_msg_hook for debugging
-# RE.msg_hook = ts_msg_hook
+# Define our global default path provider for the beamline
+path_provider = NSLS2PathProvider(RE.md)
 
-# Optionally configure baseline supplemental data to include in the metadata
-# of every run. Add baseline=[<device1>, <device2>, ...] to SupplementalData as needed.
+# Devices are added here, step by step (detectors, motors, sample environment).
+with auto_init_devices(timeout=2.0):
+    pass
+
+# Add baseline=[<device1>, <device2>, ...] to SupplementalData as devices arrive.
 sd = bpp.SupplementalData()
 RE.preprocessors.append(sd)
