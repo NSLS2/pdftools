@@ -22,6 +22,7 @@ from tiled.client import from_uri, simple
 
 import pdftools
 from pdftools.detectors import XSPDetector
+from pdftools.shutter import FastShutter
 from pdftools.utils import (
     CI_ENV_VAR,
     ProposalIDPrompt,
@@ -153,6 +154,8 @@ with auto_init_devices(timeout=2.0):
         name="pe2",
         proc_suffix="Proc1:",
     )
+    # Fast shutter, as in pdf-profile-collection 12-optics (inverted Cmd/Sts records)
+    fs = FastShutter("XF:28ID1B-OP{PSh:1-Det:2}", name="fs")
 
 # Add baseline=[<device1>, <device2>, ...] to SupplementalData as devices arrive.
 sd = bpp.SupplementalData()
