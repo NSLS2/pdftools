@@ -10,13 +10,15 @@ python = ">=3.11,<3.14"
 ipython = ">=9.16.1,<10"
 tiled-client = ">=0.2.14,<0.3"
 bluesky-tiled-plugins = ">=2.0.11,<3"
-ophyd-async = ">=0.21.3,<0.22"
-nslsii = ">=0.11.9,<0.12"
 redis-json-dict = ">=0.2.2,<0.3"
 rich = "*"
 
 [pypi-dependencies]
 pdftools = { path = ".", editable = true }
+# ContAcqDetector proc_suffix (ophyd-async #1329) and NSLS2PathProvider base_write_dir
+# (nslsii #231) are unreleased; same commits as hextools.
+ophyd-async = { git = "https://github.com/bluesky/ophyd-async", rev = "de097ace33ce2fa0ea2eb22572ef81e5af133b16", extras = ["ca", "pva", "sim"] }
+nslsii = { git = "https://github.com/NSLS2/nslsii", rev = "b8c69931660f2d74534f44c210499958959a1a0e" }
 
 [feature.profile.dependencies]
 
