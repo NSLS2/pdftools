@@ -1,0 +1,11 @@
+# Changes here will be overwritten by Copier; NEVER EDIT MANUALLY
+_commit: '2621848'
+_src_path: gh:NSLS2/nsls2-tools-template
+author_email: ''
+author_name: Brookhaven National Laboratory
+copyright_year: '2025'
+github_organization: NSLS2
+package_name: pdftools
+project_description: Importable tools for the PDF beamline at NSLS-II
+project_name: pdftools
+repository_name: pdftools

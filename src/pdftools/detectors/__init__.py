@@ -1,3 +1,5 @@
+"""Detectors used at the PDF beamline."""
+
 from .xspd import XSPIO, XSPBitDepth, XSPCounterMode, XSPDetector, XSPModule
 
 __all__ = [

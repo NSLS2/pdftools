@@ -123,5 +123,6 @@ async def test_detector_full_stack(RE, xsp_detector_factory, tiled_client, monke
     assert "primary" in run
     assert "xsp" in run["primary"]
     data = run["primary"]["xsp"].read()
-    assert data.shape == (5, 3, 4)
+    # bluesky-tiled-plugins >= 2.0.11 stacks each event's frames: (events, frames, y, x)
+    assert data.shape == (1, 5, 3, 4)
     assert data.dtype == np.uint16

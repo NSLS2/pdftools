@@ -1,3 +1,5 @@
+"""ophyd-async device for the X-Spectrum (Lambda) detector, driven through ADXSPD."""
+
 import asyncio
 from collections.abc import Sequence
 from typing import Annotated as A
@@ -28,9 +30,7 @@ from ophyd_async.epics.core import (
 
 
 class XSPBitDepth(StrictEnum):
-    """
-    Enum for XSP bit depth settings
-    """
+    """Enum for XSP bit depth settings."""
 
     ONE_BIT = "1 bit"
     SIX_BIT = "6 bit"
@@ -39,18 +39,14 @@ class XSPBitDepth(StrictEnum):
 
 
 class XSPImageMode(StrictEnum):
-    """
-    Enum for XSP image mode settings
-    """
+    """Enum for XSP image mode settings."""
 
     SINGLE = "Single"
     MULTIPLE = "Multiple"
 
 
 class XSPTriggerMode(StrictEnum):
-    """
-    Enum for XSP trigger mode settings
-    """
+    """Enum for XSP trigger mode settings."""
 
     SOFTWARE = "Software"
     EXTERNAL_FRAMES = "External Frames"
@@ -58,14 +54,14 @@ class XSPTriggerMode(StrictEnum):
 
 
 class XSPCounterMode(StrictEnum):
-    """Enum for XSP counter mode settings"""
+    """Enum for XSP counter mode settings."""
 
     SINGLE = "Single"
     DUAL = "Dual"
 
 
 class XSPCompressLevel(StrictEnum):
-    """Enum for XSP compression level settings"""
+    """Enum for XSP compression level settings."""
 
     ZERO = "0"
     ONE = "1"
@@ -80,7 +76,7 @@ class XSPCompressLevel(StrictEnum):
 
 
 class XSPCompressor(StrictEnum):
-    """Enum for XSP compressor settings"""
+    """Enum for XSP compressor settings."""
 
     NONE = "none"
     ZLIB = "zlib"
@@ -93,7 +89,7 @@ class XSPCompressor(StrictEnum):
 
 
 class XSPShuffleMode(StrictEnum):
-    """Enum for XSP shuffle mode settings"""
+    """Enum for XSP shuffle mode settings."""
 
     NONE = "None"
     BYTE = "Byte Shuffle"
@@ -102,7 +98,7 @@ class XSPShuffleMode(StrictEnum):
 
 
 class XSPROIRows(StrictEnum):
-    """Enum for XSP ROI rows settings"""
+    """Enum for XSP ROI rows settings."""
 
     ONE = "1"
     TWO = "2"
@@ -116,6 +112,8 @@ class XSPROIRows(StrictEnum):
 
 
 class XSPModule(EpicsDevice):
+    """Temperature and health readbacks of one X-Spectrum sensor module."""
+
     board_temp: A[SignalR[float], PvSuffix("BoardTemp_RBV")]
     fpga_temp: A[SignalR[float], PvSuffix("FPGATemp_RBV")]
     humidity: A[SignalR[float], PvSuffix("Humidity_RBV")]
@@ -212,6 +210,8 @@ class XSPIO(StandardReadable, ADBaseIO):
 
 
 class XSPTriggerLogic(DetectorTriggerLogic):
+    """Internal-trigger logic: image mode, image count and exposure for each prepare."""
+
     def __init__(self, driver: XSPIO):
         self.driver = driver
 
@@ -242,7 +242,7 @@ class XSPTriggerLogic(DetectorTriggerLogic):
 
 
 class XSPDetector(AreaDetector[XSPIO]):
-    """Create an ADXSPD AreaDetector instance
+    """Create an ADXSPD AreaDetector instance.
 
     :param prefix: EPICS PV prefix for the detector
     :param writer_factories: Factories for file writer plugins and their data logics,
