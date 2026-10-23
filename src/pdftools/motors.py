@@ -45,8 +45,8 @@ class Slits(EpicsDevice):
     def __init__(self, prefix: str, name: str):
         self.top = AsyncEpicsMotor(prefix + "T}Mtr", name="top")
         self.bottom = AsyncEpicsMotor(prefix + "B}Mtr", name="bottom")
-        self.inboard = AsyncEpicsMotor(prefix + "L}Mtr", name="inboard")
-        self.outboard = AsyncEpicsMotor(prefix + "R}Mtr", name="outboard")
+        self.inboard = AsyncEpicsMotor(prefix + "I}Mtr", name="inboard")
+        self.outboard = AsyncEpicsMotor(prefix + "O}Mtr", name="outboard")
         super().__init__(prefix, name=name)
 
 
