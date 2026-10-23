@@ -1,4 +1,5 @@
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -145,3 +146,5 @@ def test_profile_boots_in_mock_mode(tmp_path: Path):
     assert result.returncode == 0, result.stderr
     assert "Mock mode proposal" in result.stdout
     assert "Connecting to beamline devices" in result.stdout
+    for name in ("lambda1", "pilatus1"):
+        assert re.search(rf"{re.escape(name)} \.+ \[\s*OK\s*\]", result.stdout), name
