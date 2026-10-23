@@ -13,6 +13,7 @@ bluesky-tiled-plugins = ">=2.0.11,<3"
 ophyd-async = ">=0.21.3,<0.22"
 nslsii = ">=0.11.9,<0.12"
 redis-json-dict = ">=0.2.2,<0.3"
+rich = "*"
 
 [pypi-dependencies]
 pdftools = { path = ".", editable = true }
