@@ -1,3 +1,5 @@
+"""Sample environment devices for the PDF beamline."""
+
 import asyncio
 
 from bluesky.protocols import Locatable, Location, Stoppable
@@ -23,13 +25,15 @@ from ophyd_async.epics.core import (
 
 
 class LNPMode(StrictEnum):
-    """Enum for LNP mode settings"""
+    """Enum for LNP mode settings."""
 
     MANUAL = "Manual"
     AUTO = "Auto"
 
 
 class LinkamT96(EpicsDevice, StandardReadable, Locatable[float], Stoppable):
+    """Linkam T96 temperature controller: ramp, hold, read back and stop."""
+
     def __init__(self, prefix: str, name: str):
         self.heat = epics_signal_rw(bool, prefix + "STARTHEAT", name="heat")
 

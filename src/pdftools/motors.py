@@ -1,8 +1,12 @@
+"""Motion device classes for the PDF beamline."""
+
 from ophyd_async.epics.core import EpicsDevice, epics_signal_r
 from ophyd_async.epics.motor import Motor as AsyncEpicsMotor
 
 
 class XYStage(EpicsDevice):
+    """Two-axis (X, Y) motor stage."""
+
     def __init__(self, prefix: str, name: str):
         self.x = AsyncEpicsMotor(prefix + "X}Mtr", name="x")
         self.y = AsyncEpicsMotor(prefix + "Y}Mtr", name="y")
@@ -10,18 +14,24 @@ class XYStage(EpicsDevice):
 
 
 class XYZStage(XYStage):
+    """Three-axis (X, Y, Z) motor stage."""
+
     def __init__(self, prefix: str, name: str):
         self.z = AsyncEpicsMotor(prefix + "Z}Mtr", name="z")
         super().__init__(prefix, name=name)
 
 
 class XYZSpinner(XYZStage):
+    """X, Y, Z stage with a rotation (Ry) axis."""
+
     def __init__(self, prefix: str, name: str):
         self.ry = AsyncEpicsMotor(prefix + "Ry}Mtr", name="ry")
         super().__init__(prefix, name=name)
 
 
 class OCMTable(EpicsDevice):
+    """OCM table: X plus upstream and downstream Y jacks."""
+
     def __init__(self, prefix: str, name: str):
         self.x = AsyncEpicsMotor(prefix + "X}Mtr", name="x")
         self.upstream_y = AsyncEpicsMotor(prefix + "YU}Mtr", name="upstream_y")
@@ -30,6 +40,8 @@ class OCMTable(EpicsDevice):
 
 
 class Slits(EpicsDevice):
+    """Four-blade slits (top, bottom, inboard, outboard)."""
+
     def __init__(self, prefix: str, name: str):
         self.top = AsyncEpicsMotor(prefix + "T}Mtr", name="top")
         self.bottom = AsyncEpicsMotor(prefix + "B}Mtr", name="bottom")
@@ -39,6 +51,8 @@ class Slits(EpicsDevice):
 
 
 class SideBounceMono(EpicsDevice):
+    """Side-bounce monochromator: wedge-mount translations, angles and benders."""
+
     def __init__(self, prefix: str, name: str):
         self.x_wedgemount = AsyncEpicsMotor(prefix + "X}Mtr", name="x_wedgemount")
         self.y_wedgemount = AsyncEpicsMotor(prefix + "Y}Mtr", name="y_wedgemount")
@@ -57,6 +71,8 @@ class SideBounceMono(EpicsDevice):
 
 
 class Mirror(EpicsDevice):
+    """Mirror: Y jacks and benders, with bend and twist encoder readbacks."""
+
     def __init__(self, prefix: str, name: str):
         self.y_upstream = AsyncEpicsMotor(prefix + "YU}Mtr", name="y_upstream")
         self.y_downstream_inboard = AsyncEpicsMotor(
@@ -81,6 +97,8 @@ class Mirror(EpicsDevice):
 
 
 class OpticsTableADC(EpicsDevice):
+    """Optics table: Y jacks, X translations and Z."""
+
     def __init__(self, prefix: str, name: str):
         self.y_upstream_inboard = AsyncEpicsMotor(
             prefix + "YUI}Mtr", name="y_upstream_inboard"

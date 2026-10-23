@@ -1,6 +1,4 @@
 name: Publish Release to PyPI
-permissions:
-  contents: read
 
 on:
   release:
@@ -14,24 +12,26 @@ jobs:
     environment: pypi
     permissions:
       id-token: write
+      contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
-      - name: Setup python and pipx
-        uses: actions/setup-python@v4
+      - name: Setup Pixi
+        uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
         with:
-          python-version: '3.12'
+          environments: dev
 
       - name: Build sdist and wheel
         run: >
           export SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct) &&
-          pipx run build
+          pixi run --as-is -e dev hatch build
 
       - name: Upload sdist and wheel as artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist
@@ -41,8 +41,8 @@ jobs:
 
       - name: Install produced wheel
         run: |
-          pip install dist/*.whl
+          pixi run --as-is -e dev pip install dist/*.whl --force-reinstall --no-deps
 
       - name: Verify installation
         run: |
-          python -c "import pdftools; print(pdftools.__version__)"
+          pixi run --as-is -e dev python -c "import pdftools"
