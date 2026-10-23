@@ -222,6 +222,8 @@ def auto_init_devices(
                 line += f" [dim]({connected}/{total} signals connected)[/dim]"
             console.print(line)
         if verbose and reasons:
-            console.print("\n".join(f"{name}: {reason}" for name, reason in reasons.items()))
+            console.print(
+                "\n".join(f"{name}: {reason}" for name, reason in reasons.items())
+            )
 
     return DeviceProcessor(_process_devices)

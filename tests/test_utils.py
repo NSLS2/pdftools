@@ -48,7 +48,9 @@ def test_initialize_run_engine_uses_redis_outside_ci(monkeypatch: pytest.MonkeyP
         return "client"
 
     monkeypatch.setattr(utils, "open_redis_client", fake_open_redis_client)
-    monkeypatch.setattr(utils, "RedisJSONDict", lambda client, prefix: {"client": client})
+    monkeypatch.setattr(
+        utils, "RedisJSONDict", lambda client, prefix: {"client": client}
+    )
     RE = initialize_run_engine()
     try:
         assert calls == [{"redis_ssl": True}]
@@ -61,7 +63,13 @@ def test_initialize_run_engine_uses_redis_outside_ci(monkeypatch: pytest.MonkeyP
 
 def test_print_proposal_info(capsys: pytest.CaptureFixture[str]):
     print_proposal_info(
-        {"proposal": {"title": "Powder study", "type": "General User", "pi_name": "A. B"}}
+        {
+            "proposal": {
+                "title": "Powder study",
+                "type": "General User",
+                "pi_name": "A. B",
+            }
+        }
     )
     out = capsys.readouterr().out
     assert "Powder study" in out
