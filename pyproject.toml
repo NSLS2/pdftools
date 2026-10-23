@@ -27,8 +27,8 @@ dynamic = ["version"]
 dependencies = [
   "bluesky",
   "tiled[client]",
-  "bluesky-tiled-plugins",
-  "ophyd-async[ca, pva, sim]",
+  "bluesky-tiled-plugins>=2.0.11",
+  "ophyd-async[ca, pva, sim]>=0.21.3",
   "nslsii",
 ]
 
