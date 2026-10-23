@@ -115,22 +115,89 @@ async def test_xrd_map_typewriter_flies_one_way(
     assert [v for _, v in _sets(msgs, grid_x)] == [0.0, 2.0, 0.0, 2.0]
 
 
-async def test_xrd_map_closes_the_shutter_whenever_motors_reposition(
+async def test_xrd_map_shutter_closed_except_while_imaging(
     RE: RunEngine, pe: ContAcqDetector, fs: FastShutter, stages
 ):
     grid_x, grid_y = stages
     set_mock_value(fs.status, OnOff.OFF)  # left open by an earlier plan
     _, msgs = _run(RE, _map(pe, fs, grid_x, grid_y))
-    assert _sets(msgs, fs, grid_y) == [
+    steps = []
+    for m in msgs:
+        if m.command == "set" and m.obj in (fs, grid_y):
+            steps.append((m.obj.name, m.args[0]))
+        elif m.command == "save" and steps[-1] != ("save",):
+            steps.append(("save",))
+        elif m.command == "wait" and str(m.kwargs.get("group")).startswith("fly"):
+            steps.append(("fly done",))
+    # closed to reposition, open only while imaging, closed before the overshoot
+    row = [("fs", "Open"), ("save",), ("fs", "Close"), ("fly done",)]
+    assert steps == [
         ("fs", "Close"),
         ("grid_y", 0.0),
-        ("fs", "Open"),
+        *row,
         ("fs", "Close"),
         ("grid_y", 1.0),
-        ("fs", "Open"),
+        *row,
         ("fs", "Close"),
     ]
     assert await fs.status.get_value() == OnOff.ON
+
+
+async def test_xrd_map_backs_off_away_from_a_descending_row(
+    RE: RunEngine, pe: ContAcqDetector, fs: FastShutter, stages
+):
+    grid_x, grid_y = stages
+    _, msgs = _run(
+        RE,
+        xrd_map(
+            [pe],
+            grid_x,
+            2.0,
+            0.0,
+            3,
+            grid_y,
+            0.0,
+            1.0,
+            2,
+            0.1,
+            backoff=0.5,
+            shutter=fs,
+        ),
+    )
+    assert [v for _, v in _sets(msgs, grid_x)] == [2.5, -0.5, -0.5, 2.5]
+
+
+async def test_xrd_map_first_image_starts_at_the_row_start(
+    RE: RunEngine, pe: ContAcqDetector, fs: FastShutter
+):
+    with init_devices():
+        x = SimMotor(name="x")  # moves in real time, 0.5 s to reach speed
+        y = SimMotor(name="y", instant=True)
+    RE(bps.mv(x.velocity, 10.0))
+    docs, _ = _run(
+        RE,
+        xrd_map([pe], x, 0.0, 1.0, 2, y, 0.0, 0.0, 1, 0.1, backoff=0.5, shutter=fs),
+    )
+    # without waiting for the row start, the first image starts near -0.5
+    assert docs["event"][0]["data"]["start_x"] >= -0.02
+
+
+async def test_xrd_map_restores_velocity_when_the_shutter_fails_to_close(
+    RE: RunEngine, pe: ContAcqDetector, fs: FastShutter, stages
+):
+    grid_x, grid_y = stages
+    opened: list[bool] = []
+
+    def _stuck_open(value, **_):
+        if value == OnOff.ON and opened:
+            raise RuntimeError("shutter stuck")
+        opened.append(value == OnOff.OFF)
+        set_mock_value(fs.status, value)
+
+    callback_on_mock_put(fs.cmd, _stuck_open)
+    with pytest.raises(Exception, match="shutter stuck"):
+        RE(_map(pe, fs, grid_x, grid_y))
+    assert await grid_x.velocity.get_value() == 2.5
 
 
 async def test_xrd_map_restores_velocity_and_closes_the_shutter_on_failure(

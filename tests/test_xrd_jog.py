@@ -116,3 +116,17 @@ async def test_xrd_jog_restores_velocity_and_closes_the_shutter_on_failure(
         RE(xrd_jog([pe], grid_y, 0.0, 2.0, 0.1, num_images=3, shutter=fs))
     assert await grid_y.velocity.get_value() == 2.5
     assert await fs.status.get_value() == OnOff.ON
+
+
+async def test_xrd_jog_restores_velocity_when_the_shutter_fails_to_close(
+    RE: RunEngine, pe: ContAcqDetector, fs: FastShutter, grid_y: SimMotor
+):
+    def _stuck_open(value, **_):
+        if value == OnOff.ON:
+            raise RuntimeError("shutter stuck")
+        set_mock_value(fs.status, value)
+
+    callback_on_mock_put(fs.cmd, _stuck_open)
+    with pytest.raises(Exception, match="shutter stuck"):
+        RE(xrd_jog([pe], grid_y, 0.0, 2.0, 0.1, num_images=2, shutter=fs))
+    assert await grid_y.velocity.get_value() == 2.5

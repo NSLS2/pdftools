@@ -20,6 +20,7 @@ from ophyd_async.core import (
     StandardDetector,
     TriggerInfo,
     soft_signal_rw,
+    wait_for_value,
 )
 from ophyd_async.epics.adcore import ADImageMode, ContAcqDetector
 from ophyd_async.epics.motor import Motor
@@ -325,10 +326,12 @@ def xrd_scan(
         )
 
     def _cleanup():
-        if use_shutter:
-            yield from bps.mv(shutter, "Close")
-        if reset_position:
-            yield from bps.mv(motor, start)
+        try:
+            if use_shutter:
+                yield from bps.mv(shutter, "Close")
+        finally:
+            if reset_position:
+                yield from bps.mv(motor, start)
 
     return (
         yield from bps.repeat(
@@ -424,9 +427,11 @@ def xrd_jog(
         yield from bp.count(detectors, num=num_images, per_shot=_per_shot, md=jog_md)
 
     def _cleanup():
-        if use_shutter:
-            yield from bps.mv(shutter, "Close")
-        yield from bps.mv(motor.velocity, velocity)
+        try:
+            if use_shutter:
+                yield from bps.mv(shutter, "Close")
+        finally:
+            yield from bps.mv(motor.velocity, velocity)
 
     velocity = yield from bps.rd(motor.velocity)
     return (yield from bpp.finalize_wrapper(_body(), _cleanup()))
@@ -585,7 +590,8 @@ def xrd_map(
         frame time to set on continuous-acquisition detectors; the one they
         already have if not given
     backoff : float
-        distance to start before and stop beyond each row, to reach speed
+        distance to start before and stop beyond each row, to reach speed;
+        imaging starts once the fly motor reaches the row start
     snake : bool
         whether alternate rows fly back the other way, or every row starts at
         ``fly_start``
@@ -657,10 +663,21 @@ def xrd_map(
         [[[px_start.name], "primary"], [[step_motor.name], "primary"]],
     )
 
+    def _wait_to_cross(position: float, ascending: bool):
+        def crossed(value: float) -> bool:
+            return value >= position if ascending else value <= position
+
+        # the run-up plus generous room for the motor to accelerate
+        timeout = abs(backoff) / speed + 60.0
+        yield from bps.wait_for(
+            [lambda: wait_for_value(fly_motor.user_readback, crossed, timeout)]
+        )
+
     @bpp.stage_decorator(detectors)
     @bpp.run_decorator(md=map_md)
     def _rows():
-        row_start, row_stop, row_backoff = fly_start, fly_stop, backoff
+        row_start, row_stop = fly_start, fly_stop
+        row_backoff = backoff if fly_stop >= fly_start else -backoff
         pitch = (step_stop - step_start) / max(step_pixels - 1, 1)
         for row in range(step_pixels):
             step = step_start + row * pitch
@@ -680,6 +697,7 @@ def xrd_map(
             yield from bps.mv(fly_motor.velocity, speed)
             fly = short_uid("fly")
             yield from bps.abs_set(fly_motor, row_stop + row_backoff, group=fly)
+            yield from _wait_to_cross(row_start, ascending=row_stop >= row_start)
             for _ in range(fly_pixels):
                 pixel = short_uid("pixel")
                 for det in detectors:
@@ -691,6 +709,8 @@ def xrd_map(
                 for obj in [*detectors, px_start, px_stop, step_motor]:
                     yield from bps.read(obj)
                 yield from bps.save()
+            if use_shutter:
+                yield from bps.mv(shutter, "Close")
             yield from bps.wait(group=fly)
             if snake:
                 row_start, row_stop, row_backoff = row_stop, row_start, -row_backoff
@@ -701,9 +721,11 @@ def xrd_map(
         yield from _rows()
 
     def _cleanup():
-        if use_shutter:
-            yield from bps.mv(shutter, "Close")
-        yield from bps.mv(fly_motor.velocity, velocity)
+        try:
+            if use_shutter:
+                yield from bps.mv(shutter, "Close")
+        finally:
+            yield from bps.mv(fly_motor.velocity, velocity)
 
     yield from ensure_connected(px_start, px_stop)
     velocity = yield from bps.rd(fly_motor.velocity)
