@@ -1,3 +1,4 @@
+import datetime
 from pathlib import PurePosixPath, PureWindowsPath
 
 import bluesky.plans as bp
@@ -28,6 +29,7 @@ def test_perkin_elmer_count_sums_in_proc_and_writes_tiff_to_windows_share(
         RE.md,
         base_data_dir=PurePosixPath("/nsls2/data/pdf/proposals"),
         base_write_dir=PureWindowsPath("J:\\proposals"),
+        separator="/",
     )
     with init_devices(mock=True):
         pe = ContAcqDetector(
@@ -59,8 +61,11 @@ def test_perkin_elmer_count_sums_in_proc_and_writes_tiff_to_windows_share(
     assert written_to.startswith("J:\\proposals\\2026-3\\pass-123456\\")
     sres = docs["stream_resource"][0]
     assert sres["mimetype"] == "multipart/related;type=image/tiff"
-    assert sres["uri"].startswith(
+    # The read side is POSIX: no Windows separators may leak in from the write root.
+    today = datetime.date.today()
+    assert sres["uri"] == (
         "file://localhost/nsls2/data/pdf/proposals/2026-3/pass-123456/"
+        f"assets/pe2/{today:%Y/%m/%d}/"
     )
     get_mock_put(pe.proc.num_filter).assert_called_with(5)  # pyright: ignore[reportAttributeAccessIssue]
     desc = docs["descriptor"][0]["data_keys"]["pe2"]

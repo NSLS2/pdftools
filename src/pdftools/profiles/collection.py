@@ -120,7 +120,10 @@ path_provider = NSLS2PathProvider(RE.md)
 
 # The Perkin Elmer IOCs run on Windows hosts and write to the proposals share as J:.
 pe_path_provider = NSLS2PathProvider(
-    RE.md, base_write_dir=PureWindowsPath("J:\\proposals")
+    RE.md,
+    base_write_dir=PureWindowsPath("J:\\proposals"),
+    # Else the Windows root sets "\\" for the read-side date dirs too.
+    separator="/",
 )
 
 # Devices are added here, step by step (detectors, motors, sample environment).
