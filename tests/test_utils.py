@@ -77,6 +77,21 @@ def test_print_proposal_info(capsys: pytest.CaptureFixture[str]):
     assert "A. B" in out
 
 
+def test_print_proposal_info_keeps_markup_like_text(capsys: pytest.CaptureFixture[str]):
+    print_proposal_info(
+        {
+            "proposal": {
+                "title": "Study [in situ]",
+                "type": "General [/bold] User",
+                "pi_name": "A. B",
+            }
+        }
+    )
+    out = capsys.readouterr().out
+    assert "Study [in situ]" in out
+    assert "General [/bold] User" in out
+
+
 def test_print_proposal_info_without_proposal(capsys: pytest.CaptureFixture[str]):
     print_proposal_info({})
     assert capsys.readouterr().out == ""

@@ -3,6 +3,9 @@
 import argparse
 import os
 
+import numpy as np
+from bluesky import plan_stubs as bps
+from bluesky import plans as bp
 from bluesky import preprocessors as bpp
 from bluesky.callbacks.best_effort import BestEffortCallback
 from bluesky.magics import BlueskyMagics

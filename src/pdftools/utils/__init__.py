@@ -21,6 +21,7 @@ from pygments.token import Token
 from redis_json_dict.redis_json_dict import RedisJSONDict
 from rich import print as rprint
 from rich.console import Console
+from rich.markup import escape
 
 CI_ENV_VAR = "PDFTOOLS_RUNNING_IN_CI"
 
@@ -104,9 +105,9 @@ def print_proposal_info(md: MutableMapping[str, Any]):
     if proposal_md:
         rprint(
             "Active proposal:\n"
-            f"  Proposal title: [italic]{proposal_md['title']}[/italic]\n"
-            f"  Proposal type: [italic]{proposal_md['type']}[/italic]\n"
-            f"  Proposal PI: [italic]{proposal_md['pi_name']}[/italic]\n"
+            f"  Proposal title: [italic]{escape(str(proposal_md['title']))}[/italic]\n"
+            f"  Proposal type: [italic]{escape(str(proposal_md['type']))}[/italic]\n"
+            f"  Proposal PI: [italic]{escape(str(proposal_md['pi_name']))}[/italic]\n"
         )
 
 
