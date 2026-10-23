@@ -19,10 +19,13 @@ from ophyd_async.epics.adcore import ADImageMode, ContAcqDetector
 from ophyd_async.epics.motor import Motor
 from ophyd_async.sim import SimMotor
 
+from pdftools.eurotherm3k import Eurotherm3kLoop
 from pdftools.shutter import FastShutter
 from pdftools.utils import ensure_available
 
 Steppable = Motor | SimMotor
+# Moving one waits until its reading has settled at the setpoint.
+TemperatureController = Eurotherm3kLoop
 
 
 def ensure_cont_acq_exposure(detector: StandardDetector, exposure_time: float):
@@ -419,4 +422,98 @@ def xrd_jog(
         yield from bps.mv(motor.velocity, velocity)
 
     velocity = yield from bps.rd(motor.velocity)
+    return (yield from bpp.finalize_wrapper(_body(), _cleanup()))
+
+
+def xrd_temperature_series(
+    detectors: Sequence[StandardDetector],
+    controller: TemperatureController,
+    temperatures: Sequence[float],
+    exposure_time: float,
+    num_images: int = 1,
+    images_to_average: int = 1,
+    num_iterations: int = 1,
+    time_gap: float = 0.0,
+    ramp_rate: float | None = None,
+    sample_name: str | None = None,
+    description: str | None = None,
+    use_shutter: bool = True,
+    shutter: FastShutter | None = None,
+    md: dict | None = None,
+):
+    """Take XRD images at each of a list of temperatures.
+
+    For each temperature the controller is moved, which waits until its reading
+    has settled there (set ``tolerance`` and ``settle_time`` on the controller,
+    e.g. ``eurotherm.loop1.tolerance = 0.5``), then the images are taken as in
+    ``xrd_count``. The shutter is closed while the temperature changes. Replaces
+    pdf-profile-collection ``pbar_set_temp`` followed by a count.
+
+    Parameters
+    ----------
+    detectors : list of detectors
+        the detectors to read, e.g. ``[pe1c]``
+    controller : temperature controller
+        the loop to set, e.g. ``eurotherm.loop1``
+    temperatures : list of float
+        the setpoints, in the order to visit them
+    exposure_time : float
+        exposure time per frame, in seconds
+    num_images : int
+        number of images saved per run
+    images_to_average : int
+        number of frames combined into each saved image
+    num_iterations : int
+        number of runs at each temperature, each its own file
+    time_gap : float
+        idle time between runs at one temperature, in seconds
+    ramp_rate : float, optional
+        ramp rate to set once before the first temperature, in the controller's
+        units; left as it is if not given
+    sample_name : str, optional
+        name of the sample
+    description : str, optional
+        description of the acquisition
+    use_shutter : bool
+        whether to open the fast shutter for each count and close it after
+    shutter : FastShutter, optional
+        the fast shutter; the session's ``fs`` if not given
+    md : dict, optional
+        extra metadata for each start document
+    """
+    if use_shutter:
+        shutter = ensure_available(FastShutter, fs=shutter)
+
+    def _body():
+        for det in detectors:
+            yield from ensure_cont_acq_exposure(det, exposure_time)
+        if ramp_rate is not None:
+            yield from bps.mv(controller.ramp_rate, ramp_rate)
+        for setpoint in temperatures:
+            yield from bps.mv(controller, setpoint)
+            readback = yield from bps.rd(controller.readback)
+            run_md = _md("xrd_temperature_series", sample_name, description, md)
+            run_md["temperature"] = {
+                "controller": controller.name,
+                "setpoint": setpoint,
+                "readback": readback,
+            }
+            if use_shutter:
+                yield from bps.mv(shutter, "Open")
+            yield from _count_runs(
+                detectors,
+                exposure_time,
+                num_images,
+                images_to_average,
+                num_iterations,
+                time_gap,
+                run_md,
+            )
+            if use_shutter:
+                yield from bps.mv(shutter, "Close")
+
+    def _cleanup():
+        if use_shutter:
+            yield from bps.mv(shutter, "Close")
+
     return (yield from bpp.finalize_wrapper(_body(), _cleanup()))
