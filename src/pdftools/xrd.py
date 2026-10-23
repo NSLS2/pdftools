@@ -13,6 +13,7 @@ from bluesky import plan_stubs as bps
 from bluesky import plans as bp
 from bluesky import preprocessors as bpp
 from bluesky.protocols import Movable, Readable
+from bluesky.utils import short_uid
 from ophyd_async.core import DetectorTrigger, StandardDetector, TriggerInfo
 from ophyd_async.epics.adcore import ADImageMode, ContAcqDetector
 from ophyd_async.epics.motor import Motor
@@ -326,3 +327,96 @@ def xrd_scan(
             delay=time_between_iterations,
         )
     )
+
+
+def xrd_jog(
+    detectors: Sequence[StandardDetector],
+    motor: Steppable,
+    start: float,
+    stop: float,
+    exposure_time: float,
+    images_to_average: int = 1,
+    num_images: int = 1,
+    sample_name: str | None = None,
+    description: str | None = None,
+    use_shutter: bool = True,
+    shutter: FastShutter | None = None,
+    md: dict | None = None,
+):
+    """Take XRD images while sweeping one motor across the sample.
+
+    Each image is taken while the motor travels from one end to the other, at
+    the speed that makes the sweep last the whole image (``exposure_time`` x
+    ``images_to_average``); the next image sweeps back. As pdf-profile-collection
+    ``jog``/``rocking_ct`` did; the motor's velocity is restored afterwards.
+
+    Parameters
+    ----------
+    detectors : list of detectors
+        the detectors to read, e.g. ``[pe1c]``
+    motor : Motor
+        the motor to sweep, e.g. a sample stage axis
+    start : float
+        one end of the sweep
+    stop : float
+        the other end; equal to ``start`` takes images without moving
+    exposure_time : float
+        exposure time per frame, in seconds
+    images_to_average : int
+        number of frames combined into each saved image
+    num_images : int
+        number of images, one sweep each
+    sample_name : str, optional
+        name of the sample
+    description : str, optional
+        description of the acquisition
+    use_shutter : bool
+        whether to open the fast shutter for the acquisition and close it after
+    shutter : FastShutter, optional
+        the fast shutter; the session's ``fs`` if not given
+    md : dict, optional
+        extra metadata for the start document
+    """
+    if use_shutter:
+        shutter = ensure_available(FastShutter, fs=shutter)
+    trigger_info = TriggerInfo(
+        trigger=DetectorTrigger.INTERNAL,
+        livetime=exposure_time,
+        exposures_per_collection=images_to_average,
+    )
+    sweep_time = exposure_time * images_to_average
+    ends = [start, stop]
+    to_prepare = list(detectors)
+    jog_md = _md("xrd_jog", sample_name, description, md)
+    jog_md["jog"] = {"motor": motor.name, "start": start, "stop": stop}
+
+    # bluesky's count passes the detectors as the first argument, by this name.
+    def _per_shot(detectors, take_reading=None):
+        # stage() at the start of the run clears what prepare() set
+        for det in to_prepare:
+            yield from bps.prepare(det, trigger_info, wait=True)
+        if start == stop:
+            return (yield from bps.trigger_and_read(list(detectors)))
+        here, there = ends
+        yield from bps.mv(motor, here)
+        yield from bps.mv(motor.velocity, abs(there - here) / sweep_time)
+        group = short_uid("jog")
+        yield from bps.abs_set(motor, there, group=group)
+        yield from bps.trigger_and_read(list(detectors))
+        yield from bps.wait(group=group)
+        ends.reverse()
+
+    def _body():
+        for det in detectors:
+            yield from ensure_cont_acq_exposure(det, exposure_time)
+        if use_shutter:
+            yield from bps.mv(shutter, "Open")
+        yield from bp.count(detectors, num=num_images, per_shot=_per_shot, md=jog_md)
+
+    def _cleanup():
+        if use_shutter:
+            yield from bps.mv(shutter, "Close")
+        yield from bps.mv(motor.velocity, velocity)
+
+    velocity = yield from bps.rd(motor.velocity)
+    return (yield from bpp.finalize_wrapper(_body(), _cleanup()))
