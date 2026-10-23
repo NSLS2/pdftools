@@ -6,6 +6,7 @@ shutters, internal triggering only, and the detectors passed explicitly since
 PDF has several (``pe1c``, ``pe2c``, ``pilatus1``, ``lambda1``).
 """
 
+import math
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -538,8 +539,8 @@ def xrd_map(
     step_start: float,
     step_stop: float,
     step_pixels: int,
-    exposure_time: float,
-    images_to_average: int = 1,
+    dwell_time: float,
+    frame_time: float | None = None,
     backoff: float = 0.0,
     snake: bool = True,
     sample_name: str | None = None,
@@ -551,14 +552,16 @@ def xrd_map(
     """Collect a 2D XRD map, flying one motor and stepping the other.
 
     Each row steps ``step_motor``, then sweeps ``fly_motor`` across the row at
-    the speed that spends one averaged image (``exposure_time`` x
-    ``images_to_average``) on each pixel, taking one image per pixel. Each event
-    records where the fly motor was when the image started and stopped
-    (``start_<fly motor>``, ``stop_<fly motor>``). The whole map is one run. The
-    shutter is closed while the motors reposition between rows, and the fly
-    motor's velocity is restored afterwards. Replaces pdf-profile-collection
-    ``xrd_map`` (71-map_scans.py) without its in-map darks; take them with
-    ``xrd_dark`` before the map.
+    the speed that spends ``dwell_time`` on each pixel, taking one image per
+    pixel. As in pdf-profile-collection, a continuous-acquisition detector (the
+    Perkin Elmers) sums ``ceil(dwell_time / frame time)`` frames into each image,
+    so the dwell actually used is that many frames; it may not be shorter than
+    one frame. Each event records where the fly motor was when the image started
+    and stopped (``start_<fly motor>``, ``stop_<fly motor>``). The whole map is
+    one run. The shutter is closed while the motors reposition between rows, and
+    the fly motor's velocity is restored afterwards. Replaces
+    pdf-profile-collection ``xrd_map`` (71-map_scans.py) without its in-map
+    darks; take them with ``xrd_dark`` before the map.
 
     Parameters
     ----------
@@ -576,10 +579,11 @@ def xrd_map(
         the first and last row positions
     step_pixels : int
         number of rows
-    exposure_time : float
-        exposure time per frame, in seconds
-    images_to_average : int
-        number of frames combined into each pixel's image
+    dwell_time : float
+        total time on each pixel, in seconds
+    frame_time : float, optional
+        frame time to set on continuous-acquisition detectors; the one they
+        already have if not given
     backoff : float
         distance to start before and stop beyond each row, to reach speed
     snake : bool
@@ -598,12 +602,26 @@ def xrd_map(
     """
     if use_shutter:
         shutter = ensure_available(FastShutter, fs=shutter)
+    cont_acq = [d for d in detectors if isinstance(d, ContAcqDetector)]
+    if cont_acq:
+        frame = frame_time or (yield from bps.rd(cont_acq[0].driver.acquire_time))
+        # round first: 1.1 / 0.1 is 11.000000000000002
+        num_frames = math.ceil(round(dwell_time / frame, 9))
+        if round(dwell_time - frame, 9) < 0:
+            msg = (
+                f"dwell_time {dwell_time} s is shorter than the frame time "
+                f"{frame} s; lengthen the dwell or shorten the frame time"
+            )
+            raise ValueError(msg)
+    else:
+        frame, num_frames = dwell_time, 1
+    computed_dwell = num_frames * frame
     trigger_info = TriggerInfo(
         trigger=DetectorTrigger.INTERNAL,
-        livetime=exposure_time,
-        exposures_per_collection=images_to_average,
+        livetime=frame,
+        exposures_per_collection=num_frames,
     )
-    speed = abs(fly_stop - fly_start) / (fly_pixels * exposure_time * images_to_average)
+    speed = abs(fly_stop - fly_start) / (fly_pixels * computed_dwell)
     px_start = soft_signal_rw(float, name=f"start_{fly_motor.name}")
     px_stop = soft_signal_rw(float, name=f"stop_{fly_motor.name}")
     map_md = _md("xrd_map", sample_name, description, md)
@@ -611,6 +629,13 @@ def xrd_map(
         {
             "map_size": [fly_pixels, step_pixels],
             "extents": [[fly_start, fly_stop], [step_stop, step_start]],
+            # the old plan's keys, kept for anything downstream that reads them
+            "sp_time_per_frame": frame,
+            "sp_num_frames": num_frames,
+            "sp_requested_exposure": dwell_time,
+            "sp_computed_exposure": computed_dwell,
+            "sp_type": "ct",
+            "sp_plan_name": "map_scan",
             "plan_args": {
                 "fly_motor": fly_motor.name,
                 "fly_start": fly_start,
@@ -620,8 +645,8 @@ def xrd_map(
                 "step_start": step_start,
                 "step_stop": step_stop,
                 "step_pixels": step_pixels,
-                "exposure_time": exposure_time,
-                "images_to_average": images_to_average,
+                "dwell_time": dwell_time,
+                "frame_time": frame_time,
                 "backoff": backoff,
                 "snake": snake,
             },
@@ -672,7 +697,7 @@ def xrd_map(
 
     def _body():
         for det in detectors:
-            yield from ensure_cont_acq_exposure(det, exposure_time)
+            yield from ensure_cont_acq_exposure(det, frame)
         yield from _rows()
 
     def _cleanup():

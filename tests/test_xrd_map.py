@@ -95,7 +95,7 @@ async def test_xrd_map_snakes_one_run_with_an_event_per_pixel(
         ("grid_x", 2.5),
         ("grid_x", -0.5),
     ]
-    # 2.0 over 3 pixels of 0.1 s each; original speed to reposition and after
+    # 2.0 over 3 pixels of 0.1 s each (one 0.1 s frame); original speed otherwise
     speed = pytest.approx(2.0 / 0.3)
     assert [v for _, v in _sets(msgs, grid_x.velocity)] == [
         2.5,
@@ -147,3 +147,64 @@ async def test_xrd_map_restores_velocity_and_closes_the_shutter_on_failure(
     assert await grid_x.velocity.get_value() == 2.5
     assert await fs.status.get_value() == OnOff.ON
     assert get_mock_put(fs.cmd).call_count >= 2
+
+
+async def test_xrd_map_sums_frames_to_the_dwell_time(
+    RE: RunEngine, pe: ContAcqDetector, fs: FastShutter, stages
+):
+    grid_x, grid_y = stages
+    docs, msgs = _run(
+        RE,
+        xrd_map([pe], grid_x, 0.0, 2.0, 3, grid_y, 0.0, 1.0, 2, 0.45, shutter=fs),
+    )
+    (start,) = docs["start"]
+    # the PE's frame time is 0.1 s: 0.45 s rounds up to 5 frames, 0.5 s per pixel
+    assert start["sp_time_per_frame"] == 0.1
+    assert start["sp_num_frames"] == 5
+    assert start["sp_requested_exposure"] == 0.45
+    assert start["sp_computed_exposure"] == pytest.approx(0.5)
+    assert await pe.proc.num_filter.get_value() == 5  # pyright: ignore[reportAttributeAccessIssue]
+    assert _sets(msgs, grid_x.velocity)[1][1] == pytest.approx(2.0 / (3 * 0.5))
+
+
+async def test_xrd_map_sets_the_frame_time_when_given(
+    RE: RunEngine, pe: ContAcqDetector, fs: FastShutter, stages
+):
+    grid_x, grid_y = stages
+    docs, _ = _run(
+        RE,
+        xrd_map(
+            [pe],
+            grid_x,
+            0.0,
+            2.0,
+            3,
+            grid_y,
+            0.0,
+            1.0,
+            2,
+            1.0,
+            frame_time=0.25,
+            shutter=fs,
+        ),
+    )
+    assert await pe.driver.acquire_time.get_value() == 0.25
+    assert docs["start"][0]["sp_num_frames"] == 4
+
+
+async def test_xrd_map_refuses_a_dwell_shorter_than_one_frame(
+    RE: RunEngine, pe: ContAcqDetector, fs: FastShutter, stages
+):
+    grid_x, grid_y = stages
+    msgs: list = []
+    RE.msg_hook = msgs.append  # pyright: ignore[reportAttributeAccessIssue]
+    try:
+        with pytest.raises(Exception, match="shorter than"):
+            RE(
+                xrd_map(
+                    [pe], grid_x, 0.0, 2.0, 3, grid_y, 0.0, 1.0, 2, 0.05, shutter=fs
+                )
+            )
+    finally:
+        RE.msg_hook = None
+    assert _sets(msgs, grid_x, grid_y) == []
