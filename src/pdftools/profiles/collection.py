@@ -39,6 +39,7 @@ from pdftools.xrd import (  # noqa: F401  for the session
     xrd_count,
     xrd_dark,
     xrd_jog,
+    xrd_map,
     xrd_scan,
     xrd_temperature_series,
 )

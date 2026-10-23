@@ -6,6 +6,7 @@ shutters, internal triggering only, and the detectors passed explicitly since
 PDF has several (``pe1c``, ``pe2c``, ``pilatus1``, ``lambda1``).
 """
 
+import math
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -14,9 +15,16 @@ from bluesky import plans as bp
 from bluesky import preprocessors as bpp
 from bluesky.protocols import Movable, Readable
 from bluesky.utils import short_uid
-from ophyd_async.core import DetectorTrigger, StandardDetector, TriggerInfo
+from ophyd_async.core import (
+    DetectorTrigger,
+    StandardDetector,
+    TriggerInfo,
+    soft_signal_rw,
+    wait_for_value,
+)
 from ophyd_async.epics.adcore import ADImageMode, ContAcqDetector
 from ophyd_async.epics.motor import Motor
+from ophyd_async.plan_stubs import ensure_connected
 from ophyd_async.sim import SimMotor
 
 from pdftools.eurotherm3k import Eurotherm3kLoop
@@ -318,10 +326,12 @@ def xrd_scan(
         )
 
     def _cleanup():
-        if use_shutter:
-            yield from bps.mv(shutter, "Close")
-        if reset_position:
-            yield from bps.mv(motor, start)
+        try:
+            if use_shutter:
+                yield from bps.mv(shutter, "Close")
+        finally:
+            if reset_position:
+                yield from bps.mv(motor, start)
 
     return (
         yield from bps.repeat(
@@ -417,9 +427,11 @@ def xrd_jog(
         yield from bp.count(detectors, num=num_images, per_shot=_per_shot, md=jog_md)
 
     def _cleanup():
-        if use_shutter:
-            yield from bps.mv(shutter, "Close")
-        yield from bps.mv(motor.velocity, velocity)
+        try:
+            if use_shutter:
+                yield from bps.mv(shutter, "Close")
+        finally:
+            yield from bps.mv(motor.velocity, velocity)
 
     velocity = yield from bps.rd(motor.velocity)
     return (yield from bpp.finalize_wrapper(_body(), _cleanup()))
@@ -519,4 +531,202 @@ def xrd_temperature_series(
         if use_shutter:
             yield from bps.mv(shutter, "Close")
 
+    return (yield from bpp.finalize_wrapper(_body(), _cleanup()))
+
+
+def xrd_map(
+    detectors: Sequence[StandardDetector],
+    fly_motor: Steppable,
+    fly_start: float,
+    fly_stop: float,
+    fly_pixels: int,
+    step_motor: Steppable,
+    step_start: float,
+    step_stop: float,
+    step_pixels: int,
+    dwell_time: float,
+    frame_time: float | None = None,
+    backoff: float = 0.0,
+    snake: bool = True,
+    sample_name: str | None = None,
+    description: str | None = None,
+    use_shutter: bool = True,
+    shutter: FastShutter | None = None,
+    md: dict | None = None,
+):
+    """Collect a 2D XRD map, flying one motor and stepping the other.
+
+    Each row steps ``step_motor``, then sweeps ``fly_motor`` across the row at
+    the speed that spends ``dwell_time`` on each pixel, taking one image per
+    pixel. As in pdf-profile-collection, a continuous-acquisition detector (the
+    Perkin Elmers) sums ``ceil(dwell_time / frame time)`` frames into each image,
+    so the dwell actually used is that many frames; it may not be shorter than
+    one frame. Each event records where the fly motor was when the image started
+    and stopped (``start_<fly motor>``, ``stop_<fly motor>``). The whole map is
+    one run. The shutter is closed while the motors reposition between rows, and
+    the fly motor's velocity is restored afterwards. Replaces
+    pdf-profile-collection ``xrd_map`` (71-map_scans.py) without its in-map
+    darks; take them with ``xrd_dark`` before the map.
+
+    Parameters
+    ----------
+    detectors : list of detectors
+        the detectors to read, e.g. ``[pe1c]``
+    fly_motor : Motor
+        the fast axis, moved continuously across each row
+    fly_start, fly_stop : float
+        the ends of each row
+    fly_pixels : int
+        number of pixels (images) per row
+    step_motor : Motor
+        the slow axis, stepped between rows
+    step_start, step_stop : float
+        the first and last row positions
+    step_pixels : int
+        number of rows
+    dwell_time : float
+        total time on each pixel, in seconds
+    frame_time : float, optional
+        frame time to set on continuous-acquisition detectors; the one they
+        already have if not given
+    backoff : float
+        distance to start before and stop beyond each row, to reach speed;
+        imaging starts once the fly motor reaches the row start
+    snake : bool
+        whether alternate rows fly back the other way, or every row starts at
+        ``fly_start``
+    sample_name : str, optional
+        name of the sample
+    description : str, optional
+        description of the acquisition
+    use_shutter : bool
+        whether to open the fast shutter for each row and close it after
+    shutter : FastShutter, optional
+        the fast shutter; the session's ``fs`` if not given
+    md : dict, optional
+        extra metadata for the start document
+    """
+    if use_shutter:
+        shutter = ensure_available(FastShutter, fs=shutter)
+    cont_acq = [d for d in detectors if isinstance(d, ContAcqDetector)]
+    if cont_acq:
+        frame = frame_time or (yield from bps.rd(cont_acq[0].driver.acquire_time))
+        # round first: 1.1 / 0.1 is 11.000000000000002
+        num_frames = math.ceil(round(dwell_time / frame, 9))
+        if round(dwell_time - frame, 9) < 0:
+            msg = (
+                f"dwell_time {dwell_time} s is shorter than the frame time "
+                f"{frame} s; lengthen the dwell or shorten the frame time"
+            )
+            raise ValueError(msg)
+    else:
+        frame, num_frames = dwell_time, 1
+    computed_dwell = num_frames * frame
+    trigger_info = TriggerInfo(
+        trigger=DetectorTrigger.INTERNAL,
+        livetime=frame,
+        exposures_per_collection=num_frames,
+    )
+    speed = abs(fly_stop - fly_start) / (fly_pixels * computed_dwell)
+    px_start = soft_signal_rw(float, name=f"start_{fly_motor.name}")
+    px_stop = soft_signal_rw(float, name=f"stop_{fly_motor.name}")
+    map_md = _md("xrd_map", sample_name, description, md)
+    map_md.update(
+        {
+            "map_size": [fly_pixels, step_pixels],
+            "extents": [[fly_start, fly_stop], [step_stop, step_start]],
+            # the old plan's keys, kept for anything downstream that reads them
+            "sp_time_per_frame": frame,
+            "sp_num_frames": num_frames,
+            "sp_requested_exposure": dwell_time,
+            "sp_computed_exposure": computed_dwell,
+            "sp_type": "ct",
+            "sp_plan_name": "map_scan",
+            "plan_args": {
+                "fly_motor": fly_motor.name,
+                "fly_start": fly_start,
+                "fly_stop": fly_stop,
+                "fly_pixels": fly_pixels,
+                "step_motor": step_motor.name,
+                "step_start": step_start,
+                "step_stop": step_stop,
+                "step_pixels": step_pixels,
+                "dwell_time": dwell_time,
+                "frame_time": frame_time,
+                "backoff": backoff,
+                "snake": snake,
+            },
+        }
+    )
+    map_md.setdefault("hints", {}).setdefault(
+        "dimensions",
+        [[[px_start.name], "primary"], [[step_motor.name], "primary"]],
+    )
+
+    def _wait_to_cross(position: float, ascending: bool):
+        def crossed(value: float) -> bool:
+            return value >= position if ascending else value <= position
+
+        # the run-up plus generous room for the motor to accelerate
+        timeout = abs(backoff) / speed + 60.0
+        yield from bps.wait_for(
+            [lambda: wait_for_value(fly_motor.user_readback, crossed, timeout)]
+        )
+
+    @bpp.stage_decorator(detectors)
+    @bpp.run_decorator(md=map_md)
+    def _rows():
+        row_start, row_stop = fly_start, fly_stop
+        row_backoff = backoff if fly_stop >= fly_start else -backoff
+        pitch = (step_stop - step_start) / max(step_pixels - 1, 1)
+        for row in range(step_pixels):
+            step = step_start + row * pitch
+            yield from bps.checkpoint()
+            if use_shutter:
+                yield from bps.mv(shutter, "Close")
+            yield from bps.mv(fly_motor.velocity, velocity)
+            group = short_uid("reposition")
+            yield from bps.abs_set(step_motor, step, group=group)
+            yield from bps.abs_set(fly_motor, row_start - row_backoff, group=group)
+            # stage() at the start of the run clears what prepare() set
+            for det in detectors:
+                yield from bps.prepare(det, trigger_info, group=group)
+            yield from bps.wait(group=group)
+            if use_shutter:
+                yield from bps.mv(shutter, "Open")
+            yield from bps.mv(fly_motor.velocity, speed)
+            fly = short_uid("fly")
+            yield from bps.abs_set(fly_motor, row_stop + row_backoff, group=fly)
+            yield from _wait_to_cross(row_start, ascending=row_stop >= row_start)
+            for _ in range(fly_pixels):
+                pixel = short_uid("pixel")
+                for det in detectors:
+                    yield from bps.trigger(det, group=pixel)
+                yield from bps.mv(px_start, (yield from bps.rd(fly_motor)))
+                yield from bps.wait(group=pixel)
+                yield from bps.mv(px_stop, (yield from bps.rd(fly_motor)))
+                yield from bps.create("primary")
+                for obj in [*detectors, px_start, px_stop, step_motor]:
+                    yield from bps.read(obj)
+                yield from bps.save()
+            if use_shutter:
+                yield from bps.mv(shutter, "Close")
+            yield from bps.wait(group=fly)
+            if snake:
+                row_start, row_stop, row_backoff = row_stop, row_start, -row_backoff
+
+    def _body():
+        for det in detectors:
+            yield from ensure_cont_acq_exposure(det, frame)
+        yield from _rows()
+
+    def _cleanup():
+        try:
+            if use_shutter:
+                yield from bps.mv(shutter, "Close")
+        finally:
+            yield from bps.mv(fly_motor.velocity, velocity)
+
+    yield from ensure_connected(px_start, px_stop)
+    velocity = yield from bps.rd(fly_motor.velocity)
     return (yield from bpp.finalize_wrapper(_body(), _cleanup()))
