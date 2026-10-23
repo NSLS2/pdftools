@@ -22,6 +22,7 @@ from tiled.client import from_uri, simple
 
 import pdftools
 from pdftools.detectors import XSPDetector
+from pdftools.eurotherm3k import Eurotherm3k
 from pdftools.motors import Mirror, OCMTable, OpticsTableADC, SideBounceMono, Slits
 from pdftools.shutter import FastShutter, FilterBank
 from pdftools.utils import (
@@ -160,6 +161,10 @@ with auto_init_devices(timeout=2.0):
     fs = FastShutter("XF:28ID1B-OP{PSh:1-Det:2}", name="fs")
     # Filter bank: the old profile's fb_two_button_shutters (fb2), now just fb
     fb = FilterBank("XF:28ID1B-OP{Fltr:", name="fb")
+
+    # Eurotherm 3504, as in pdf-profile-collection 16-eurotherm_HAB;
+    # the old eurotherm3504 is loop1
+    eurotherm = Eurotherm3k("XF:28ID1-ES{ET:05}", name="eurotherm")
 
     # Optics, as in pdf-profile-collection 12-optics
     OCM_slits = Slits("XF:28ID1B-OP{Slt:2-Ax:", name="OCM_slits")

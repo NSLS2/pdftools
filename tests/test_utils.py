@@ -153,6 +153,7 @@ def test_profile_boots_in_mock_mode(tmp_path: Path):
         "pe2c",
         "fs",
         "fb",
+        "eurotherm",
         "OCM_slits",
         "BDM_slits",
         "WB_slits",
