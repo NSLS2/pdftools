@@ -23,6 +23,7 @@ from tiled.client import from_uri, simple
 import pdftools
 from pdftools.detectors import XSPDetector
 from pdftools.eurotherm3k import Eurotherm3k
+from pdftools.lakeshore336 import LakeShore336
 from pdftools.motors import Mirror, OCMTable, OpticsTableADC, SideBounceMono, Slits
 from pdftools.shutter import FastShutter, FilterBank
 from pdftools.utils import (
@@ -172,6 +173,8 @@ with auto_init_devices(timeout=2.0):
     # Eurotherm 3504, as in pdf-profile-collection 16-eurotherm_HAB;
     # the old eurotherm3504 is loop1
     eurotherm = Eurotherm3k("XF:28ID1-ES{ET:05}", name="eurotherm")
+    # Lake Shore 336 cryostat, as in pdf-profile-collection 101-Lakeshore336Cryostat
+    lake = LakeShore336("XF:28ID1-ES{LS336:1", name="Lakeshore")
 
     # Optics, as in pdf-profile-collection 12-optics
     OCM_slits = Slits("XF:28ID1B-OP{Slt:2-Ax:", name="OCM_slits")
@@ -182,6 +185,9 @@ with auto_init_devices(timeout=2.0):
     Mirror_VFM = Mirror("XF:28ID1A-OP{Mir:VFM-Ax:", name="Mirror_VFM")
     optics_table_adc = OpticsTableADC("XF:28ID1B-ES{Tbl:1-Ax:", name="optics_table_adc")
     OCM_table = OCMTable("XF:28ID1B-ES{OCM-Ax:", name="OCM_table")
+
+# Outside init_devices, which would rename lake.out1 to "cryostat"
+cryostat = lake.out1
 
 # Add baseline=[<device1>, <device2>, ...] to SupplementalData as devices arrive.
 sd = bpp.SupplementalData()
