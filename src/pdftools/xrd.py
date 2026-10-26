@@ -8,6 +8,7 @@ PDF has several (``pe1c``, ``pe2c``, ``pilatus1``, ``lambda1``).
 
 import math
 from collections.abc import Mapping, Sequence
+from functools import partial
 from typing import Any
 
 from bluesky import plan_stubs as bps
@@ -19,6 +20,7 @@ from ophyd_async.core import (
     DetectorTrigger,
     StandardDetector,
     TriggerInfo,
+    set_and_wait_for_value,
     soft_signal_rw,
     wait_for_value,
 )
@@ -62,8 +64,18 @@ def ensure_cont_acq_exposure(detector: StandardDetector, exposure_time: float):
         detector.driver.image_mode,
         ADImageMode.CONTINUOUS,
     )
-    # A busy record: waiting on it would block until acquisition stops.
-    yield from bps.abs_set(detector.driver.acquire, True, wait=False)
+    # Acquire's put completes only when acquisition stops: wait on its readback.
+    (started,) = yield from bps.wait_for(
+        [
+            partial(
+                set_and_wait_for_value,
+                detector.driver.acquire,
+                True,
+                wait_for_set_completion=False,
+            )
+        ]
+    )
+    started.result()
 
 
 def _md(
