@@ -29,13 +29,12 @@ from ophyd_async.epics.motor import Motor
 from ophyd_async.plan_stubs import ensure_connected
 from ophyd_async.sim import SimMotor
 
-from pdftools.eurotherm3k import Eurotherm3kLoop
+from pdftools.lakeshore336 import LakeShore336Loop
 from pdftools.shutter import FastShutter
+from pdftools.temperature import TemperatureController, move_and_continue
 from pdftools.utils import ensure_available
 
 Steppable = Motor | SimMotor
-# Moving one waits until its reading has settled at the setpoint.
-TemperatureController = Eurotherm3kLoop
 
 
 def ensure_cont_acq_exposure(detector: StandardDetector, exposure_time: float):
@@ -459,6 +458,7 @@ def xrd_temperature_series(
     num_iterations: int = 1,
     time_gap: float = 0.0,
     ramp_rate: float | None = None,
+    continue_if_unsettled: bool = False,
     sample_name: str | None = None,
     description: str | None = None,
     use_shutter: bool = True,
@@ -470,15 +470,18 @@ def xrd_temperature_series(
     For each temperature the controller is moved, which waits until its reading
     has settled there (set ``tolerance`` and ``settle_time`` on the controller,
     e.g. ``eurotherm.loop1.tolerance = 0.5``), then the images are taken as in
-    ``xrd_count``. The shutter is closed while the temperature changes. Replaces
-    pdf-profile-collection ``pbar_set_temp`` followed by a count.
+    ``xrd_count``. The shutter is closed while the temperature changes. Each
+    start document records the setpoint, the temperature read just before the
+    run and whether the move settled. Replaces pdf-profile-collection
+    ``pbar_set_temp`` followed by a count, and the cryostat's
+    ``move_and_continue`` followed by a count.
 
     Parameters
     ----------
     detectors : list of detectors
         the detectors to read, e.g. ``[pe1c]``
     controller : temperature controller
-        the loop to set, e.g. ``eurotherm.loop1``
+        the loop to set, e.g. ``eurotherm.loop1`` or ``cryostat``
     temperatures : list of float
         the setpoints, in the order to visit them
     exposure_time : float
@@ -493,7 +496,10 @@ def xrd_temperature_series(
         idle time between runs at one temperature, in seconds
     ramp_rate : float, optional
         ramp rate to set once before the first temperature, in the controller's
-        units; left as it is if not given
+        units (K/min for the Lake Shore); left as it is if not given
+    continue_if_unsettled : bool
+        if a move times out before settling, warn and take the images anyway
+        instead of stopping; any other move failure still stops the plan
     sample_name : str, optional
         name of the sample
     description : str, optional
@@ -512,22 +518,31 @@ def xrd_temperature_series(
         for det in detectors:
             yield from ensure_cont_acq_exposure(det, exposure_time)
         if ramp_rate is not None:
-            yield from bps.mv(controller.ramp_rate, ramp_rate)
+            if isinstance(controller, LakeShore336Loop):
+                yield from bps.mv(controller.ramp, ramp_rate)
+            else:
+                yield from bps.mv(controller.ramp_rate, ramp_rate)
         for setpoint in temperatures:
             if use_shutter:
                 yield from bps.mv(shutter, "Close")
-            yield from bps.mv(controller, setpoint)
+            if continue_if_unsettled:
+                failure = yield from move_and_continue(controller, setpoint)
+                settled = failure is None
+            else:
+                yield from bps.mv(controller, setpoint)
+                settled = True
             if use_shutter:
                 yield from bps.mv(shutter, "Open")
             for i in range(num_iterations):
                 if i > 0:
                     yield from bps.sleep(time_gap)
-                readback = yield from bps.rd(controller.readback)
+                location = yield from bps.locate(controller)
                 run_md = _md("xrd_temperature_series", sample_name, description, md)
                 run_md["temperature"] = {
                     "controller": controller.name,
                     "setpoint": setpoint,
-                    "readback": readback,
+                    "readback": location["readback"],
+                    "settled": settled,
                 }
                 yield from _count_runs(
                     detectors,
