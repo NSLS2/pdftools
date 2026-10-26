@@ -13,6 +13,7 @@ from ophyd_async.core import (
 from ophyd_async.epics.adcore import ContAcqDetector
 
 from pdftools.eurotherm3k import Eurotherm3k
+from pdftools.lakeshore336 import LakeShore336
 from pdftools.shutter import FastShutter, OnOff
 from pdftools.xrd import xrd_temperature_series
 
@@ -74,7 +75,12 @@ async def test_xrd_temperature_series_counts_at_each_settled_temperature(
     assert {s["plan_name"] for s in starts} == {"xrd_temperature_series"}
     assert {s["sample_name"] for s in starts} == {"Ni"}
     assert [s["temperature"] for s in starts[::2]] == [
-        {"controller": "eurotherm-loop1", "setpoint": t, "readback": t + 0.2}
+        {
+            "controller": "eurotherm-loop1",
+            "setpoint": t,
+            "readback": t + 0.2,
+            "settled": True,
+        }
         for t in (100.0, 200.0, 300.0)
     ]
     # closed while the temperature moves, open only to count
@@ -165,3 +171,78 @@ async def test_xrd_temperature_series_reads_the_temperature_before_each_run(
         100.4,
         100.7,
     ]
+
+
+async def test_xrd_temperature_series_counts_with_the_lakeshore_cryostat(
+    RE: RunEngine, pe: ContAcqDetector, fs: FastShutter, fast_lake: LakeShore336
+):
+    cryostat = fast_lake.out1
+    callback_on_mock_put(
+        cryostat.sp,
+        lambda value, **_: set_mock_value(fast_lake.input_c.temp, value + 0.3),
+    )
+    docs, _ = _run(
+        RE,
+        xrd_temperature_series(
+            [pe], cryostat, [90.0, 100.0], 0.1, ramp_rate=3.0, shutter=fs
+        ),
+    )
+    assert [c.args[0] for c in get_mock_put(cryostat.sp).call_args_list] == [
+        90.0,
+        100.0,
+    ]
+    assert [c.args[0] for c in get_mock_put(cryostat.ramp).call_args_list] == [3.0]
+    assert [s["temperature"] for s in docs["start"]] == [
+        {
+            "controller": "Lakeshore-out1",
+            "setpoint": t,
+            "readback": t + 0.3,
+            "settled": True,
+        }
+        for t in (90.0, 100.0)
+    ]
+
+
+async def test_xrd_temperature_series_can_count_where_it_did_not_settle(
+    RE: RunEngine, pe: ContAcqDetector, fs: FastShutter, eurotherm: Eurotherm3k
+):
+    loop = eurotherm.loop1
+    callback_on_mock_put(loop.setpoint, lambda *_, **__: None)  # stays at 25
+    loop.move_timeout = 0.2
+    with pytest.warns(RuntimeWarning, match="eurotherm-loop1 did not settle"):
+        docs, _ = _run(
+            RE,
+            xrd_temperature_series(
+                [pe], loop, [300.0, 310.0], 0.1, continue_if_unsettled=True, shutter=fs
+            ),
+        )
+    assert [s["temperature"] for s in docs["start"]] == [
+        {
+            "controller": "eurotherm-loop1",
+            "setpoint": t,
+            "readback": 25.0,
+            "settled": False,
+        }
+        for t in (300.0, 310.0)
+    ]
+    assert await fs.status.get_value() == OnOff.ON
+
+
+async def test_xrd_temperature_series_stops_on_other_move_failures(
+    RE: RunEngine, pe: ContAcqDetector, fs: FastShutter, fast_lake: LakeShore336
+):
+    docs: dict[str, list[Any]] = {}
+    with pytest.raises(Exception, match="outside"):
+        RE(
+            xrd_temperature_series(
+                [pe],
+                fast_lake.out1,
+                [600.0],
+                0.1,
+                continue_if_unsettled=True,
+                shutter=fs,
+            ),
+            lambda name, doc: docs.setdefault(name, []).append(doc),
+        )
+    assert "start" not in docs
+    assert await fs.status.get_value() == OnOff.ON

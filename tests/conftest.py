@@ -31,6 +31,8 @@ from tiled.client import from_uri
 from tiled.client.container import Container
 from tiled.server import SimpleTiledServer
 
+from pdftools.lakeshore336 import LakeShore336, LakeShore336LoopLogic
+
 _ALLOWED_PYTEST_TASKS = {"async_finalizer", "async_setup", "async_teardown"}
 
 
@@ -226,3 +228,19 @@ def pe(RE: RunEngine, static_path_provider: StaticPathProvider) -> ContAcqDetect
     # each run opens a new file, which starts the count again
     callback_on_mock_put(tiff.capture, lambda _: set_mock_value(tiff.num_captured, 0))
     return pe
+
+
+@pytest.fixture
+def fast_lake(RE: RunEngine) -> LakeShore336:
+    """The PDF Lake Shore, mocked; out1 settles in 0.05 s and follows its setpoint."""
+    with init_devices(mock=True):
+        lake = LakeShore336("XF:28ID1-ES{LS336:1", name="Lakeshore")
+    logic = lake.out1.movable_logic
+    assert isinstance(logic, LakeShore336LoopLogic)
+    logic.settle_time = 0.05
+    set_mock_value(lake.input_c.temp, 80.0)
+    set_mock_value(lake.out1.ramp, 6.0)
+    callback_on_mock_put(
+        lake.out1.sp, lambda value, **_: set_mock_value(lake.input_c.temp, value)
+    )
+    return lake

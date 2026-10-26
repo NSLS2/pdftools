@@ -26,6 +26,11 @@ from pdftools.eurotherm3k import Eurotherm3k
 from pdftools.lakeshore336 import LakeShore336
 from pdftools.motors import Mirror, OCMTable, OpticsTableADC, SideBounceMono, Slits
 from pdftools.shutter import FastShutter, FilterBank
+from pdftools.temperature import (  # noqa: F401  for the session
+    default_loop,
+    move_and_continue,
+    t_list,
+)
 from pdftools.utils import (
     CI_ENV_VAR,
     ProposalIDPrompt,
