@@ -4,11 +4,13 @@ import asyncio
 from typing import Any
 
 import pytest
+from bluesky import plan_stubs as bps
 from bluesky.run_engine import RunEngine
 from ophyd_async.core import (
     callback_on_mock_put,
     get_mock_put,
     init_devices,
+    set_mock_put_proceeds,
     set_mock_value,
 )
 from ophyd_async.epics.adcore import ADImageMode, ContAcqDetector
@@ -148,6 +150,60 @@ async def test_xrd_scan_closes_the_shutter_and_returns_the_motor_on_failure(
         RE(xrd_scan([pe], det_z, 1.0, 3.0, 3, 0.1, shutter=fs))
     assert await det_z.user_readback.get_value() == 1.0
     assert await fs.status.get_value() == OnOff.ON
+
+
+def _busy_acquire(pe: ContAcqDetector, timed_out: list[bool]) -> None:
+    """Acquire as the IOC runs it: the readback follows after a delay, and the put
+    completes only when acquisition stops."""
+    acquire = pe.driver.acquire
+
+    def _release_after_timeout():
+        timed_out.append(True)
+        set_mock_put_proceeds(acquire, True)
+
+    def _on_put(value, **_):
+        if not value:
+            set_mock_put_proceeds(acquire, True)
+            return None
+        set_mock_put_proceeds(acquire, False)
+        loop = asyncio.get_running_loop()
+        loop.call_later(0.2, set_mock_value, acquire, True)
+        # bound the test if the plan waits on the put rather than the readback
+        loop.call_later(15.0, _release_after_timeout)
+        return False  # the readback has not caught up yet
+
+    callback_on_mock_put(acquire, _on_put)
+
+
+async def test_ensure_cont_acq_exposure_returns_once_the_detector_is_acquiring(
+    RE: RunEngine, pe: ContAcqDetector
+):
+    timed_out: list[bool] = []
+    acquiring: list[bool] = []
+    _busy_acquire(pe, timed_out)
+
+    def _plan():
+        yield from ensure_cont_acq_exposure(pe, 0.3)
+        acquiring.append((yield from bps.rd(pe.driver.acquire)))
+
+    RE(_plan())
+    RE.loop.call_soon_threadsafe(set_mock_put_proceeds, pe.driver.acquire, True)
+    assert acquiring == [True]
+    assert timed_out == []
+
+
+async def test_xrd_scan_after_a_restart_waits_for_the_acquire_readback_not_its_put(
+    RE: RunEngine, pe: ContAcqDetector, fs: FastShutter
+):
+    timed_out: list[bool] = []
+    _busy_acquire(pe, timed_out)
+    with init_devices():
+        det_z = SimMotor(name="det_z", instant=True)
+    docs = _collect(RE, xrd_scan([pe], det_z, 0.0, 1.0, 2, 0.3, shutter=fs))
+    RE.loop.call_soon_threadsafe(set_mock_put_proceeds, pe.driver.acquire, True)
+    assert len(docs["event"]) == 2
+    assert timed_out == []
+    assert await pe.driver.acquire_time.get_value() == 0.3
 
 
 def test_the_shutter_comes_from_the_session_when_not_given(
