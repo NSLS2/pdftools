@@ -133,14 +133,13 @@ class LakeShore336LoopLogic(MovableLogic[float]):
     async def calculate_timeout(
         self, old_position: float, new_position: float
     ) -> float:
-        await self.delta_t(old_position, new_position)
-        print(f"Delta = {self.delta:.2f}")
-        await self.set_pids(new_position)
+        delta = new_position - old_position
+        print(f"Delta = {delta:.2f}")
 
-        ramp_rate = await self.ramp.get_value()  # perhaps degrees/minute
+        ramp_rate = await self.ramp.get_value()  # K/min
         if ramp_rate == 0:
-            ramp_rate = 0.015  # K/s
-        travel_time = abs(self.delta) / ramp_rate * 60
+            ramp_rate = 0.015 * 60  # 0.015 K/s
+        travel_time = abs(delta) / ramp_rate * 60
         timeout = travel_time + self.settle_time + 30
         print(f"{timeout:.2f} Seconds to complete the temp change")
         return timeout
@@ -150,6 +149,7 @@ class LakeShore336LoopLogic(MovableLogic[float]):
         start_time = perf_counter()
         original_temp = await self.readback.get_value()
         print(f"Changing temp from {original_temp:.2f} to {new_position:.2f}")
+        await self.delta_t(original_temp, new_position)
 
         loop = asyncio.get_running_loop()
         settled = asyncio.Event()
@@ -172,8 +172,9 @@ class LakeShore336LoopLogic(MovableLogic[float]):
         # Subscribe before writing so that a fast readback update cannot be missed.
         self.readback.subscribe_reading(update_settled_state)
         try:
-            await self.setpoint.set(new_position)
             async with asyncio.timeout(timeout()):
+                await self.set_pids(new_position)
+                await self.setpoint.set(new_position)
                 await settled.wait()
             minutes = (perf_counter() - start_time) / 60
             print(f"Temp change completed in {minutes:.2f} mins")
@@ -245,6 +246,7 @@ class LakeShore336Loop(EpicsDevice, StandardReadable, StandardMovable[float]):
         self._settle_time = settle_time
         self._move_timeout = move_timeout
         super().__init__(prefix, name=name)
+        self.add_readables([self.movable_logic.readback], Format.HINTED_SIGNAL)
 
     @property
     def loop_input(self) -> LakeShore336Input:

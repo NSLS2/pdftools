@@ -1,5 +1,7 @@
 """Lake Shore 336 (PDF cryostat) against mocked PVs, pinned to the live IOC."""
 
+import time
+
 import pytest
 from bluesky import plan_stubs as bps
 from bluesky.run_engine import RunEngine
@@ -10,6 +12,7 @@ from ophyd_async.core import (
     callback_on_mock_put,
     get_mock_put,
     init_devices,
+    set_mock_put_proceeds,
     set_mock_value,
 )
 
@@ -192,3 +195,36 @@ async def test_a_move_that_never_settles_times_out(cryostat: _Cryostat):
     callback_on_mock_put(cryostat.out1.sp, lambda *_, **__: None)
     with pytest.raises(TimeoutError):
         await cryostat.out1.set(100.0, timeout=0.2)
+
+
+async def test_with_the_ramp_off_the_timeout_assumes_0_015_k_per_second(
+    cryostat: _Cryostat,
+):
+    set_mock_value(cryostat.out1.ramp, 0.0)
+    logic = cryostat.out1.movable_logic
+    # 60 K at 0.015 K/s, plus the settle time, plus 30 s
+    assert await logic.calculate_timeout(80.0, 140.0) == pytest.approx(4030.05)
+
+
+async def test_a_move_with_its_own_timeout_still_sets_the_pids(cryostat: _Cryostat):
+    await cryostat.out1.set(100.0, timeout=5.0)
+    out1 = cryostat.out1
+    gains = (await out1.p.get_value(), await out1.i.get_value())
+    assert (*gains, await out1.d.get_value()) == (50, 10, 1)
+
+
+async def test_the_timeout_also_bounds_the_setpoint_write(cryostat: _Cryostat):
+    set_mock_put_proceeds(cryostat.out1.sp, False)
+    start = time.monotonic()
+    with pytest.raises(TimeoutError):
+        await cryostat.out1.set(100.0, timeout=0.2)
+    assert time.monotonic() - start < 2.0
+    set_mock_put_proceeds(cryostat.out1.sp, True)
+
+
+async def test_the_loop_reads_its_measured_temperature(cryostat: _Cryostat):
+    set_mock_value(cryostat.input_c.temp, 77.0)
+    reading = await cryostat.out1.read()
+    assert reading["cryostat-out1"]["value"] == 77.0
+    assert "cryostat-out1" in await cryostat.out1.describe()
+    assert "cryostat-out1" in cryostat.out1.hints.get("fields", [])
