@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.11"
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'win32'",
@@ -2316,7 +2316,7 @@ wheels = [
 
 [[package]]
 name = "ophyd-async"
-version = "0.21.3"
+version = "0.21.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "bluesky" },
@@ -2330,9 +2330,9 @@ dependencies = [
     { name = "stamina" },
     { name = "velocity-profile" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/2a/f6/d1878af8283b63c7af960e160122b0c7d565c6440ec6abd900776388dfce/ophyd_async-0.21.3.tar.gz", hash = "sha256:373b60c432366cb12b8ce40f289826ab53708b2b95d0e6be0c75404ea39bf9c0", size = 679766, upload-time = "2026-09-23T08:37:03.14Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ab/64/6ff50f5422d9d73c7c7ac4386f9c514ea54f35fadb11b062aaff619f119c/ophyd_async-0.21.5.tar.gz", hash = "sha256:e369c13550d82e134f2abd4b9784f89204de4f201da23ebb628892c27829fd04", size = 758690, upload-time = "2026-11-18T12:43:47.431Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/6c/01/626bf9585228485b82f0afb4460413f34d2898c8482fab9bfc200be369e1/ophyd_async-0.21.3-py3-none-any.whl", hash = "sha256:63a868c0c64cd2b349983dcce5a46ba9dcea6c922de1f7a3ea92c717f918afd4", size = 261955, upload-time = "2026-09-23T08:37:01.818Z" },
+    { url = "https://files.pythonhosted.org/packages/ab/87/def907e88c84c42cae2580a5411ac7e916a62f54797e2683c5f93fc29890/ophyd_async-0.21.5-py3-none-any.whl", hash = "sha256:7a0f0084a5df9c66ef57177ae6e7ee327e5b75ebbef87d431adc3a855f15662d", size = 272046, upload-time = "2026-11-18T12:43:46.001Z" },
 ]
 
 [package.optional-dependencies]
@@ -2573,7 +2573,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "bluesky" },
-    { name = "ophyd-async", specifier = ">=0.21.3" },
+    { name = "ophyd-async", specifier = ">=0.21.5" },
     { name = "tiled", extras = ["client"] },
 ]
 
@@ -2585,7 +2585,7 @@ dev = [
     { name = "inflection" },
     { name = "ipython" },
     { name = "numpydoc" },
-    { name = "ophyd-async", extras = ["ca", "pva", "sim"], specifier = ">=0.21.3" },
+    { name = "ophyd-async", extras = ["ca", "pva", "sim"], specifier = ">=0.21.5" },
     { name = "pre-commit" },
     { name = "pyright" },
     { name = "pytest" },
