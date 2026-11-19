@@ -19,13 +19,15 @@ from ophyd_async.epics.adcore import (
     ADWriterFactory,
     AreaDetector,
     NDPluginBaseIO,
-    trigger_info_from_num_images,
+    NDProcessIO,
+    trigger_info_from_driver,
 )
 from ophyd_async.epics.core import (
     EpicsDevice,
     PvSuffix,
 )
 
+from dataclasses import dataclass
 
 class XSPBitDepth(StrictEnum):
     """
@@ -210,10 +212,11 @@ class XSPIO(StandardReadable, ADBaseIO):
         SignalR[float], PvSuffix("SensorThickness_RBV"), Format.CONFIG_SIGNAL
     ]
 
-
+@dataclass
 class XSPTriggerLogic(DetectorTriggerLogic):
-    def __init__(self, driver: XSPIO):
-        self.driver = driver
+
+    driver: XSPIO
+    process_plugin: NDProcessIO | None
 
     def config_sigs(self) -> set[SignalR]:
         return {
@@ -238,7 +241,7 @@ class XSPTriggerLogic(DetectorTriggerLogic):
         await asyncio.gather(*coros)
 
     async def default_trigger_info(self):
-        return await trigger_info_from_num_images(self.driver)
+        return await trigger_info_from_driver(self.driver.num_images, self.process_plugin)
 
 
 class XSPDetector(AreaDetector[XSPIO]):
@@ -258,18 +261,20 @@ class XSPDetector(AreaDetector[XSPIO]):
         prefix: str,
         *writer_factories: ADWriterFactory,
         driver_suffix="cam1:",
+        proc_suffix: str | None = "Proc1:",
         plugins: dict[str, NDPluginBaseIO] | None = None,
         config_sigs: Sequence[SignalR] = (),
         name: str = "",
     ) -> None:
         driver = XSPIO(prefix + driver_suffix)
+        proc = NDProcessIO(prefix + proc_suffix, tiff_suffix="TIFF:") if proc_suffix else None
         super().__init__(
             driver,
             prefix,
             *writer_factories,
             acquire_logic=ADAcquireLogic(driver),
-            trigger_logic=XSPTriggerLogic(driver),
-            plugins=plugins,
+            trigger_logic=XSPTriggerLogic(driver, proc),
+            plugins=(plugins or {}) | ({"proc": proc} if proc else {}),
             config_sigs=config_sigs,
             name=name,
         )
